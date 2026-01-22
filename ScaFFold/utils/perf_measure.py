@@ -28,6 +28,7 @@ if CALI_PERF_ENV_VAR in os.environ:
 
         _CALI_PERF_ENABLED = True
     except Exception:
+        raise
         print("User requested Caliper annotations, but could not import Caliper")
 elif (
     TORCH_PERF_ENV_VAR in os.environ
