@@ -246,6 +246,9 @@ def main(kwargs_dict: dict = {}):
         Trained to >= 0.95 validation dice score in {total_train_time:.2f} seconds, {total_epochs} epochs."
     )
 
+    # solve hang?
+    dist.barrier()
+
     #
     # Generate plots
     #
