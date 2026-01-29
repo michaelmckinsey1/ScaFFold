@@ -308,7 +308,7 @@ class PyTorchTrainer(BaseTrainer):
                             masks_pred = masks_pred_dc.to_ddp()
                             dt_labels = distribute_tensor(
                                 true_masks,
-                                device_mesh=ps.device_mesh["dc"],
+                                device_mesh=ps.device_mesh[f"dc{self.config.shard_dim+2}"],
                                 placements=[Shard(0)],
                             )
                             labels_for_loss = dt_labels.to_local()
@@ -423,11 +423,11 @@ class PyTorchTrainer(BaseTrainer):
                             true_masks_ddp = (
                                 DTensor.from_local(
                                     true_masks_dp,
-                                    device_mesh=ps.device_mesh["dc4"],
+                                    device_mesh=ps.device_mesh[f"dc{self.config.shard_dim+2}"],
                                     placements=[Replicate()],
                                 )
                                 .redistribute(
-                                    device_mesh=ps.device_mesh["dc4"],
+                                    device_mesh=ps.device_mesh[f"dc{self.config.shard_dim+2}"],
                                     placements=[Shard(0)],
                                 )
                                 .to_local()
