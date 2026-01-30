@@ -595,8 +595,9 @@ class PyTorchTrainer(BaseTrainer):
                 #
                 begin_code_region("checkpoint")
 
-                extras = {"train_mask_values": self.train_set.mask_values}
-                self.checkpoint_manager.save_checkpoint(epoch, val_loss_avg, extras)
+                if epoch % self.config.checkpoint_interval == 0:
+                    extras = {"train_mask_values": self.train_set.mask_values}
+                    self.checkpoint_manager.save_checkpoint(epoch, val_loss_avg, extras)
 
                 end_code_region("checkpoint")
 
