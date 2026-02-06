@@ -241,7 +241,11 @@ class PyTorchTrainer(BaseTrainer):
 
             # If we loaded a checkpoint (start_epoch > 1), we must ensure the CSV
             # matches the state of that checkpoint.
-            if self.world_rank == 0 and self.start_epoch > 1 and os.path.exists(self.outfile_path):
+            if (
+                self.world_rank == 0
+                and self.start_epoch > 1
+                and os.path.exists(self.outfile_path)
+            ):
                 self._truncate_stats_file(self.start_epoch)
 
         # Set up the output file headers
@@ -261,11 +265,13 @@ class PyTorchTrainer(BaseTrainer):
 
     def _truncate_stats_file(self, start_epoch):
         """
-        Scans the stats file and truncates it at the first occurrence of 
+        Scans the stats file and truncates it at the first occurrence of
         an epoch >= start_epoch. This is O(1) memory and safe for large logs.
         """
-        self.log.info(f"Truncating {self.outfile_path} to remove epochs >= {start_epoch}")
-        
+        self.log.info(
+            f"Truncating {self.outfile_path} to remove epochs >= {start_epoch}"
+        )
+
         try:
             # Open in read+update mode ('r+') to allow seeking and truncating
             with open(self.outfile_path, "r+") as f:
@@ -284,30 +290,33 @@ class PyTorchTrainer(BaseTrainer):
                     # Save the current file position (start of the line)
                     current_pos = f.tell()
                     line = f.readline()
-                    
+
                     # End of file reached
                     if not line:
                         break
-                    
+
                     parts = line.strip().split(",")
                     try:
                         row_epoch = int(float(parts[epoch_idx]))
-                        
+
                         # If we find a row that is "from the future" (or the current restarting epoch)
                         if row_epoch >= start_epoch:
                             # Move pointer back to the start of this line
                             f.seek(current_pos)
                             # Cut the file off right here
                             f.truncate()
-                            self.log.info(f"Truncated stats file at byte {current_pos} (found epoch {row_epoch})")
+                            self.log.info(
+                                f"Truncated stats file at byte {current_pos} (found epoch {row_epoch})"
+                            )
                             break
                     except (ValueError, IndexError):
-                        # Skip malformed lines, or decide to stop. 
+                        # Skip malformed lines, or decide to stop.
                         # Usually safe to continue scanning.
                         pass
-                        
+
         except Exception as e:
             self.log.warning(f"Failed to truncate stats file: {e}")
+
     def train(self):
         """
         Execute model training
