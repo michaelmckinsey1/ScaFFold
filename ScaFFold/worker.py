@@ -246,13 +246,6 @@ def main(kwargs_dict: dict = {}):
         Trained to >= 0.95 validation dice score in {total_train_time:.2f} seconds, {total_epochs} epochs."
     )
 
-    # solve hang?
-    if os.getenv("SKIP_DIST_BARRIERS") != "1":
-        torch.cuda.synchronize()
-        print(f"Done cuda sync rank {rank}")
-        dist.barrier()
-        print(f"Done barrier rank {rank}")
-
     #
     # Generate plots
     #
@@ -262,9 +255,7 @@ def main(kwargs_dict: dict = {}):
         standard_viz.main(config)
         end_code_region("generate_figures")
 
-    if os.getenv("SKIP_DIST_BARRIERS") != "1":
-        dist.barrier()
-        print(f"Done barrier rank {rank}")
-        dist.destroy_process_group()
+    dist.barrier()
+    dist.destroy_process_group()
 
     return 0
