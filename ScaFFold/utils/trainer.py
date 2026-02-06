@@ -341,7 +341,6 @@ class PyTorchTrainer(BaseTrainer):
             end_code_region("warmup")
             self.log.info(f"Done warmup. Took {int(time.time() - start_warmup)}s")
 
-
         epoch = 1
         dice_score_train = 0
         with open(self.outfile_path, "a", newline="") as outfile:
