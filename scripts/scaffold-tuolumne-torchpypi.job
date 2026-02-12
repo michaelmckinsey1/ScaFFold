@@ -9,13 +9,7 @@
 
 ml rccl/fast-env-slows-mpi libfabric
 
-. .venvs/scaffoldvenv-tuo/bin/activate
-
-# Avoid spindle error
-export SPINDLE_FLUXOPT=off
-
-# Avoid libmagma error
-export LD_PRELOAD=/opt/rocm-7.1.0/llvm/lib/libomp.so
+. .venvs/scaffoldvenv-tuo-pypi/bin/activate
 
 # Use ccl plugin that we manually built with install-rccl.sh
 export NCCL_NET_PLUGIN=aws-ofi-nccl.git/install/lib/librccl-net.so

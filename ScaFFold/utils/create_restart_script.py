@@ -98,7 +98,7 @@ def _get_env_setup() -> str:
 # --- Begin Environment Setup ---
 # Load Modules
 if command -v module &> /dev/null; then
-    module load rocm/6.4.2 rccl/fast-env-slows-mpi libfabric
+    module load rocm/7.1.0 rccl/fast-env-slows-mpi libfabric
 fi
 
 # Activate Virtual Environment
@@ -109,17 +109,17 @@ else
 fi
 
 # 1. Define the path to the ROCm LLVM OpenMP library
-ROCM_OMP_LIB="/opt/rocm-6.4.2/llvm/lib/libomp.so"
+ROCM_OMP_LIB="/opt/rocm-7.1.0/llvm/lib/libomp.so"
 
 # 2. Check if it exists before proceeding
 if [ ! -f "$ROCM_OMP_LIB" ]; then
     echo "ERROR: Could not find OpenMP at $ROCM_OMP_LIB"
     # Fallback search if the standard path is wrong
-    ROCM_OMP_LIB=$(find /opt/rocm-6.4.2 -name libomp.so | head -n 1)
+    ROCM_OMP_LIB=$(find /opt/rocm-7.1.0 -name libomp.so | head -n 1)
     echo "Found alternative at: $ROCM_OMP_LIB"
 fi
 if [ -z "$ROCM_OMP_LIB" ]; then
-    echo "CRITICAL: Unable to find libomp.so in /opt/rocm-6.4.2. Aborting."
+    echo "CRITICAL: Unable to find libomp.so in /opt/rocm-7.1.0. Aborting."
     exit 1
 fi
 
