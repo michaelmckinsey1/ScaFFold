@@ -18,7 +18,8 @@ export SPINDLE_FLUXOPT=off
 export LD_PRELOAD=/opt/rocm-7.1.0/llvm/lib/libomp.so
 
 # Use ccl plugin that we manually built with install-rccl.sh
-export NCCL_NET_PLUGIN=aws-ofi-nccl.git/install/lib/librccl-net.so
+export NCCL_NET_PLUGIN=../aws-ofi-nccl.git/install/lib/librccl-net.so
+export NCCL_NET="AWS Libfabric"
 
 torchrun-hpc -N 1 -n 1 $(which scaffold) generate_fractals -c $(pwd)/ScaFFold/configs/benchmark_default.yml
 
