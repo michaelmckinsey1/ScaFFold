@@ -664,7 +664,7 @@ class PyTorchTrainer(BaseTrainer):
 
                 end_code_region("checkpoint")
 
-                dice_score_train = dice_sum
+                dice_score_train = val_score
                 epoch += 1
 
         adiak_value("final_epochs", epoch)
