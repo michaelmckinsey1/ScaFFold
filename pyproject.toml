@@ -69,7 +69,7 @@ rocm = [
 ]
 rocmwci = [
     "torch==2.10.0+rocm710",
-    "mpi4py==4.1.1+mpich.9.0.1",
+    "mpi4py==4.1.1+mpich.9.1.0",
 ]
 
 [project.entry-points.console_scripts]

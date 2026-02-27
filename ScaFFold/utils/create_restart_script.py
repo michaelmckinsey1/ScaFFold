@@ -98,7 +98,7 @@ def _get_env_setup() -> str:
 # --- Begin Environment Setup ---
 # Load Modules
 if command -v module &> /dev/null; then
-    module load rocm/7.1.0 rccl/fast-env-slows-mpi libfabric
+    ml cce/21.0.0 cray-mpich/9.1.0 rocm/7.1.0 rccl/fast-env-slows-mpi
 fi
 
 # Activate Virtual Environment

@@ -29,7 +29,7 @@ The model is trained from a random initialization until convergence, which is de
 1. Clone the repository:  
     `git clone https://github.com/LBANN/ScaFFold.git && cd ScaFFold`
 
-1. Build the ccl plugin
+1. Build the ccl plugin (if not using WCI wheel)
     `. scripts/install-rccl.sh`
 
 1. Create and activate a python venv for running the benchmark:  
@@ -40,11 +40,9 @@ The model is trained from a random initialization until convergence, which is de
         1. `ml cuda/12.9.1 gcc/13.3.1 mvapich2/2.3.7`
         1. `export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH`
     - ROCm (elcap):
-        1. `ml load rocm/7.1.0 rccl/fast-env-slows-mpi libfabric`
-        2. `export NCCL_NET_PLUGIN=aws-ofi-nccl.git/install/lib/librccl-net.so` export manually-built ccl plugin for rocm7
+        1. `ml cce/21.0.0 cray-mpich/9.1.0 rocm/7.1.0 rccl/fast-env-slows-mpi`
             - If using WCI wheel:
                 1. `export LD_PRELOAD=/opt/rocm-7.1.0/llvm/lib/libomp.so` # for libomp.so
-                1. `export SPINDLE_FLUXOPT=off` # Avoid spindle error
 
 1. Install the benchmark in the python venv:
     - CUDA: `pip install --no-binary=mpi4py .[cuda] --prefix=.venvs/scaffoldvenv --extra-index-url https://download.pytorch.org/whl/cu129 2>&1 | tee install.log`
