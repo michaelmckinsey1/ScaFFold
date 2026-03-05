@@ -159,7 +159,7 @@ def main():
     benchmark_parser.add_argument(
         "--num-shards",
         type=int,
-        help="DistConv param: number of shards to divide the tensor into. It's best to choose the fewest ranks needed to fit one sample in GPU memory, since that keeps communication at a minimum"
+        help="DistConv param: number of shards to divide the tensor into. It's best to choose the fewest ranks needed to fit one sample in GPU memory, since that keeps communication at a minimum",
     )
 
     comm = MPI.COMM_WORLD
