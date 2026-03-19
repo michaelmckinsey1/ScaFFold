@@ -359,7 +359,10 @@ class PyTorchTrainer(BaseTrainer):
                             masks_pred_dc = self.model(images_dc)
 
                             # Convert predictions for loss
-                            if isinstance(ps.num_shards, tuple) and len(ps.num_shards) == 1:
+                            if (
+                                isinstance(ps.num_shards, tuple)
+                                and len(ps.num_shards) == 1
+                            ):
                                 n_shards = ps.num_shards[0]
                             else:
                                 n_shards = ps.num_shards
