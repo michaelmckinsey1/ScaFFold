@@ -97,7 +97,7 @@ def get_torch_context(ranks_per_node, rank):
             torchprofile(
                 activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU],
                 record_shapes=True,
-                with_stack=True,
+                with_stack=False,
             )
             if TORCH_PERF_LOCAL
             else nullcontext()
