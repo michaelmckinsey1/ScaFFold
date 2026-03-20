@@ -16,8 +16,13 @@ export NCCL_NET_PLUGIN=../aws-ofi-nccl.git/install/lib/librccl-net.so
 
 # Disable direct convolution benchmarking (should speedup warmup by a significant amount)
 # export MIOPEN_DEBUG_CONV_DIRECT=0
-# Disable direct naive convolution benchmarking
+
+# Disable direct naive convolution benchmarking (naive_conv_ab_nonpacked_fwd_ndhwc_half_double_half.kd)
 export MIOPEN_DEBUG_CONV_DIRECT_NAIVE_CONV_FWD=0
+# Disable naive_conv_ab_nonpacked_bwd_ndhwc_half_double_half.kd
+export MIOPEN_DEBUG_CONV_DIRECT_NAIVE_CONV_BWD=0
+# Disable naive_conv_ab_nonpacked_wrw_ndhwc_half_double_half.kd
+export MIOPEN_DEBUG_CONV_DIRECT_NAIVE_CONV_WRW=0
 
 torchrun-hpc -N 1 -n 1 $(which scaffold) generate_fractals -c $(pwd)/ScaFFold/configs/benchmark_default.yml
 
