@@ -180,7 +180,7 @@ def main(config: Dict):
                 dtype=np.float32,
             )
             mask = np.full(
-                (config.vol_size, config.vol_size, config.vol_size), 0, dtype=np.short
+                (config.vol_size, config.vol_size, config.vol_size), 0, dtype=np.int64
             )
 
             global_vol_idx = curr_vol[0]
@@ -223,14 +223,18 @@ def main(config: Dict):
 
             # Determine destination folder
             subdir = "validation" if global_vol_idx in val_indices else "training"
+            volume_to_save = np.ascontiguousarray(
+                volume.transpose((3, 0, 1, 2)), dtype=np.float32
+            )
+            mask_to_save = np.ascontiguousarray(mask, dtype=np.int64)
 
             vol_file = os.path.join(vol_path, subdir, f"{global_vol_idx}.npy")
             with open(vol_file, "wb") as f:
-                np.save(f, volume)
+                np.save(f, volume_to_save)
 
             mask_file = os.path.join(mask_path, subdir, f"{global_vol_idx}_mask.npy")
             with open(mask_file, "wb") as f:
-                np.save(f, mask)
+                np.save(f, mask_to_save)
 
         end_time = time.time()
         total_time = end_time - start_time
