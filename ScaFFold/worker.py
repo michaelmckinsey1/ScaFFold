@@ -225,6 +225,12 @@ def main(kwargs_dict: dict = {}):
     ranks_per_node = get_local_size()
     prof_ctx, TORCH_PERF_LOCAL = get_torch_context(ranks_per_node, rank)
     with prof_ctx as prof:
+        begin_code_region("prepare_training")
+        trainer.prepare_training()
+        end_code_region("prepare_training")
+        begin_code_region("warmup")
+        trainer.warmup()
+        end_code_region("warmup")
         begin_code_region("train")
         trainer.train()
         end_code_region("train")
