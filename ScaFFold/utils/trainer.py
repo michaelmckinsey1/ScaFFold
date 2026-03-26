@@ -320,6 +320,7 @@ class PyTorchTrainer(BaseTrainer):
         except Exception as e:
             self.log.warning(f"Failed to truncate stats file: {e}")
 
+
     def _get_memsize(self, tensor, tensor_label: str, verbosity: int = 0):
         """Log size of tensor in memory"""
 
