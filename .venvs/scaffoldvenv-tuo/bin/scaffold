@@ -1,6 +1,0 @@
-#!/usr/WS1/miles30/ScaFFold_rocm711/.venvs/scaffoldvenv-tuo/bin/python3
-import sys
-from ScaFFold.cli import main
-if __name__ == '__main__':
-    sys.argv[0] = sys.argv[0].removesuffix('.exe')
-    sys.exit(main())
