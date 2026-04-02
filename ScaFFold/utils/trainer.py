@@ -208,6 +208,10 @@ class PyTorchTrainer(BaseTrainer):
             async_save=getattr(self.config, "async_save", False),
         )
 
+        self.ps = None  # DistConv ParallelStrategy
+        self.spatial_mesh = None  # Spatial mesh for use w/ DistConv
+        self.ddp_placements = None  # DDP placements for use w/ DistConv
+
     def cleanup_or_resume(self):
         """
         Clean up existing train stats and checkpoints,
