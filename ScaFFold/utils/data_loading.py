@@ -19,8 +19,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
 import yaml
+from torch.utils.data import Dataset
 
 from ScaFFold.utils.utils import customlog
 
@@ -88,7 +88,9 @@ class BasicDataset(Dataset):
 
     @staticmethod
     def _prepare_legacy_mask(mask_values, mask):
-        remapped = np.zeros((mask.shape[0], mask.shape[1], mask.shape[2]), dtype=np.int64)
+        remapped = np.zeros(
+            (mask.shape[0], mask.shape[1], mask.shape[2]), dtype=np.int64
+        )
         for i, value in enumerate(mask_values):
             if mask.ndim == 3:
                 remapped[mask == value] = i
@@ -130,8 +132,6 @@ class BasicDataset(Dataset):
             "image": torch.from_numpy(img).contiguous().float(),
             "mask": torch.from_numpy(mask).contiguous().long(),
         }
-        
-
 
 
 class FractalDataset(BasicDataset):
