@@ -131,7 +131,7 @@ class BaseTrainer:
         self.create_sampler()
 
         loader_args = dict(
-            batch_size=self.config.batch_size, num_workers=4, pin_memory=True
+            batch_size=self.config.batch_size, num_workers=1, pin_memory=True
         )
         self.log.debug(
             f"dataloader num_workers={loader_args['num_workers']}, os.cpu_count()={os.cpu_count()}, self.world_size={self.world_size} "
@@ -656,18 +656,6 @@ class PyTorchTrainer(BaseTrainer):
                         gather_and_print_mem(self.log, "post_backward")
 
                         begin_code_region("step_and_update")
-<<<<<<< HEAD
-                        if batch_step + 1 == len(self.train_loader):
-                            self.grad_scaler.unscale_(self.optimizer)
-                            torch.nn.utils.clip_grad_norm_(
-                                self.model.parameters(), max_norm=1.0
-                            )
-                            self.grad_scaler.step(self.optimizer)
-                            gather_and_print_mem(self.log, "after_optim_step")
-
-                            self.grad_scaler.update()
-                            self.optimizer.zero_grad(set_to_none=False)
-=======
                         self.grad_scaler.unscale_(self.optimizer)
                         torch.nn.utils.clip_grad_norm_(
                             self.model.parameters(), max_norm=1.0
@@ -676,7 +664,6 @@ class PyTorchTrainer(BaseTrainer):
                         gather_and_print_mem(self.log, "after_optim_step")
                         self.grad_scaler.update()
                         self.optimizer.zero_grad(set_to_none=False)
->>>>>>> 5f4e647 (apply optimizer every batch, not every epoch; unscale gradients before clipping)
                         end_code_region("step_and_update")
 
                         # Update the loss
