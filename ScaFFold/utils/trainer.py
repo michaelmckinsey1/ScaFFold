@@ -481,6 +481,22 @@ class PyTorchTrainer(BaseTrainer):
         self.optimizer.zero_grad(set_to_none=True)
 
         if self.config.dist:
+            self.val_loader.sampler.set_epoch(0)
+
+        self.log.info("Running evaluation warmup")
+        evaluate(
+            self.model,
+            self.val_loader,
+            self.device,
+            self.config.torch_amp,
+            self.world_rank == 0,
+            self.criterion,
+            self.config.n_categories,
+            self.config._parallel_strategy,
+        )
+        self.model.train()
+
+        if self.config.dist:
             torch.distributed.barrier()
         self.log.info(f"Done warmup. Took {int(time.time() - start_warmup)}s")
 
