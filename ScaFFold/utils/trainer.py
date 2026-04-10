@@ -483,7 +483,6 @@ class PyTorchTrainer(BaseTrainer):
         if self.config.dist:
             self.val_loader.sampler.set_epoch(0)
 
-        self.log.info("Running evaluation warmup")
         evaluate(
             self.model,
             self.val_loader,
@@ -694,7 +693,7 @@ class PyTorchTrainer(BaseTrainer):
                     self.val_loader,
                     self.device,
                     self.config.torch_amp,
-                    True if self.world_rank == 0 else False,
+                    self.world_rank == 0,
                     self.criterion,
                     self.config.n_categories,
                     self.config._parallel_strategy,
