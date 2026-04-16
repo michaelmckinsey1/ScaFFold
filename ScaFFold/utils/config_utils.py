@@ -73,13 +73,6 @@ class Config:
         ]
         self.target_dice = config_dict["target_dice"]
         self.checkpoint_interval = config_dict["checkpoint_interval"]
-        if not isinstance(self.checkpoint_interval, int):
-            raise TypeError("checkpoint_interval must be an integer")
-        if self.checkpoint_interval != -1 and self.checkpoint_interval < 1:
-            raise ValueError(
-                "checkpoint_interval must be -1 to disable checkpointing or >= 1"
-            )
-
         self.dc_num_shards = config_dict["dc_num_shards"]
         self.dc_shard_dims = config_dict["dc_shard_dims"]
         self.dc_total_shards = math.prod(self.dc_num_shards)
