@@ -61,7 +61,16 @@ class Config:
         self.seed = config_dict["seed"]
         self.dist = bool(config_dict["dist"])
         self.framework = config_dict["framework"]
-        self.starting_learning_rate = config_dict["starting_learning_rate"]
+        self.scale_reference = config_dict["scale_reference"]
+        self.scale_reference_starting_learning_rate = config_dict[
+            "scale_reference_starting_learning_rate"
+        ]
+        self.scale_learning_rate_factor = config_dict["scale_learning_rate_factor"]
+        self.starting_learning_rate = (
+            self.scale_reference_starting_learning_rate
+            * self.scale_learning_rate_factor
+            ** (self.problem_scale - self.scale_reference)
+        )
         self.gamma = config_dict["gamma"]
         self.min_learning_rate = config_dict["min_learning_rate"]
         self.variance_threshold = config_dict["variance_threshold"]
