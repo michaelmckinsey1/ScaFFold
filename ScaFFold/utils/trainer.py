@@ -780,6 +780,8 @@ class PyTorchTrainer(BaseTrainer):
 
                 # This check must exist otherwise the condition dice_score_train < self.config.target_dice will evaluate to False and incorrectly exit the training
                 if math.isnan(dice_score_train):
-                    raise ValueError("Invalid value (NaN) encountered in dice score computation")
+                    raise ValueError(
+                        "Invalid value (NaN) encountered in dice score computation"
+                    )
 
         adiak_value("final_epochs", epoch)
