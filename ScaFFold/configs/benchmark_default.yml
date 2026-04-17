@@ -19,8 +19,7 @@ variance_threshold: 0.15           # Variance threshold for valid fractals. Defa
 n_fracts_per_vol: 3                # Number of fractals overlaid in each volume. Default is 3.
 val_split: 25                      # In percent.
 epochs: -1                         # Number of training epochs.
-scale_reference: 6                 # Problem scale at which the reference starting LR is defined.
-scale_reference_starting_learning_rate: 0.0025  # Starting LR used at scale_reference.
+starting_learning_rate: 0.0025  # Starting LR used at scale_reference 6.
 scale_learning_rate_factor: 0.5    # Multiply starting LR by this factor for each +1 increase in problem_scale.
 gamma: 0.99                        # ExponentialLR decay factor applied each epoch when scheduler is enabled.
 min_learning_rate: 0.0001          # Floor for scheduler-adjusted learning rate.
