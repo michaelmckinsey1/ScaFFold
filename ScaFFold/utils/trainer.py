@@ -154,22 +154,24 @@ class BaseTrainer:
         if self.config.optimizer == "ADAM":
             self.log.info("Using ADAM optimizer.")
             self.optimizer = optim.Adam(
-                self.model.parameters(), lr=self.config.learning_rate
+                self.model.parameters(), lr=self.config.starting_learning_rate
             )
         elif self.config.optimizer == "SGD":
             self.log.info("Using SGD optimizer.")
             self.optimizer = optim.SGD(
-                self.model.parameters(), lr=self.config.learning_rate
+                self.model.parameters(), lr=self.config.starting_learning_rate
             )
         else:
             self.log.info("Using RMSprop optimizer.")
             self.optimizer = optim.RMSprop(
-                self.model.parameters(), lr=self.config.learning_rate, foreach=True
+                self.model.parameters(),
+                lr=self.config.starting_learning_rate,
+                foreach=True,
             )
 
         # Set up learning rate scheduler
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, "max", patience=25
+        self.scheduler = optim.lr_scheduler.ExponentialLR(
+            self.optimizer, gamma=self.config.gamma
         )
 
         # Set up gradient scaler for AMP (Automatic Mixed Precision)
@@ -185,6 +187,24 @@ class BaseTrainer:
         self.log.info(
             f"Optimizer: {self.optimizer}, Scheduler: {self.scheduler}, Gradient Scaler Enabled: {self.config.torch_amp}"
         )
+
+    @staticmethod
+    def _foreground_dice_mean(dice_scores):
+        """Match optimization to the reported validation metric by excluding background."""
+        if dice_scores.size(1) > 1:
+            return dice_scores[:, 1:].mean()
+        return dice_scores.mean()
+
+    def _maybe_step_scheduler(self):
+        """Apply scheduler updates when enabled."""
+        if self.config.disable_scheduler:
+            self.log.debug("scheduler disabled, no LR update this step")
+            return
+
+        self.scheduler.step()
+        for param_group in self.optimizer.param_groups:
+            if param_group["lr"] < self.config.min_learning_rate:
+                param_group["lr"] = self.config.min_learning_rate
 
 
 class PyTorchTrainer(BaseTrainer):
@@ -436,7 +456,7 @@ class PyTorchTrainer(BaseTrainer):
                 dice_scores = compute_sharded_dice(
                     local_preds_softmax, local_labels_one_hot, self.spatial_mesh
                 )
-                loss_dice = 1.0 - dice_scores.mean()
+                loss_dice = 1.0 - self._foreground_dice_mean(dice_scores)
 
                 # 3. Combine Loss
                 loss = loss_ce + loss_dice
@@ -641,11 +661,13 @@ class PyTorchTrainer(BaseTrainer):
                                 local_labels_one_hot,
                                 self.spatial_mesh,
                             )
-                            loss_dice = 1.0 - dice_scores.mean()
+                            loss_dice = 1.0 - self._foreground_dice_mean(dice_scores)
 
                             # 3. Combine Loss
                             loss = loss_ce + loss_dice
-                            train_dice_total += dice_scores[:, 1:].mean().item()
+                            train_dice_total += self._foreground_dice_mean(
+                                dice_scores
+                            ).item()
 
                             end_code_region("calculate_loss")
 
@@ -698,19 +720,8 @@ class PyTorchTrainer(BaseTrainer):
                         dice_info, op=torch.distributed.ReduceOp.SUM
                     )
                 val_score = dice_info[0].item() / max(dice_info[1].item(), 1)
-                if not self.config.disable_scheduler:
-                    # The following is true when trying to overfit,
-                    # in which case we only care about train loss
-                    if self.n_train == 1 or "overfit" in self.outfile_path:
-                        self.log.debug(
-                            "WARNING: scheduler step by overall_loss, \
-                                    not val_score (n_train==1 or overfit in outfile_path)"
-                        )
-                        self.scheduler.step(overall_loss)
-                    else:  # Otherwise, we're really trying to optimize for validation dice score
-                        self.scheduler.step(val_score)
-                else:
-                    self.log.debug("scheduler disabled, no LR update this step")
+                self._maybe_step_scheduler()
+                current_lr = self.optimizer.param_groups[0]["lr"]
 
                 epoch_end_time = time.time()
                 epoch_duration = epoch_end_time - epoch_start_time
@@ -721,7 +732,8 @@ class PyTorchTrainer(BaseTrainer):
                 self.log.info(
                     f" epoch {epoch} \
                             | train_dice_loss {train_dice:.6f} (type {type(train_dice)}) \
-                            | val_dice_score {val_score:.6f}"
+                            | val_dice_score {val_score:.6f} \
+                            | lr {current_lr:.8f}"
                 )
                 self.log.debug(f" writing to csv at {self.outfile_path}")
                 if self.world_rank == 0:

@@ -32,6 +32,11 @@ from ScaFFold.utils.perf_measure import annotate
 def evaluate(
     net, dataloader, device, amp, primary, criterion, n_categories, parallel_strategy
 ):
+    def foreground_dice_mean(dice_scores):
+        if dice_scores.size(1) > 1:
+            return dice_scores[:, 1:].mean()
+        return dice_scores.mean()
+
     net.eval()
     num_val_batches = len(dataloader)
     total_dice_score = 0.0
@@ -118,11 +123,11 @@ def evaluate(
             dice_score_probs = compute_sharded_dice(
                 mask_pred_probs, mask_true_onehot, spatial_mesh
             )
-            dice_loss_curr = 1.0 - dice_score_probs.mean()
+            dice_loss_curr = 1.0 - foreground_dice_mean(dice_score_probs)
 
             # Eval metric (excluding background class 0)
             # dice_score_probs shape is [Batch, Channels]. We slice [:, 1:] to drop background
-            batch_dice_score = dice_score_probs[:, 1:].mean()
+            batch_dice_score = foreground_dice_mean(dice_score_probs)
 
             # --- Combine and Accumulate ---
             loss = CE_loss + dice_loss_curr
