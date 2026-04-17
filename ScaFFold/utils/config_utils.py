@@ -61,9 +61,7 @@ class Config:
         self.seed = config_dict["seed"]
         self.dist = bool(config_dict["dist"])
         self.framework = config_dict["framework"]
-        self.starting_learning_rate = config_dict[
-            "starting_learning_rate"
-        ]
+        self.starting_learning_rate = config_dict["starting_learning_rate"]
         self.scale_learning_rate_factor = config_dict["scale_learning_rate_factor"]
         self.starting_learning_rate = (
             self.starting_learning_rate
