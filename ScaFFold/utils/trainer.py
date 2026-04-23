@@ -211,8 +211,8 @@ class BaseTrainer:
     def _foreground_dice_mean(dice_scores):
         """Match optimization to the reported validation metric by excluding background."""
         if dice_scores.size(1) > 1:
-            return dice_scores[:, 1:].mean()
-        return dice_scores.mean()
+            return dice_scores[:, 1:].mean().item()
+        return dice_scores.mean().item()
 
 
 class PyTorchTrainer(BaseTrainer):

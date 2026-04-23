@@ -32,8 +32,8 @@ def evaluate(
 
     def foreground_dice_mean(dice_scores):
         if dice_scores.size(1) > 1:
-            return dice_scores[:, 1:].mean()
-        return dice_scores.mean()
+            return dice_scores[:, 1:].mean().item()
+        return dice_scores.mean().item()
 
     net.eval()
     num_val_batches = len(dataloader)
