@@ -84,10 +84,22 @@ def evaluate(
             if local_preds.size(0) == 0 or local_labels.size(0) == 0:
                 continue
 
-            # --- 1. Sharded CE Loss ---
             with torch.autocast(device_type=autocast_device_type, enabled=False):
+                # --- 1. Sharded CE Loss ---
                 local_ce_sum = F.cross_entropy(
                     local_preds.float(), local_labels, reduction="sum"
+                )
+                # --- 2. Sharded Dice Loss ---
+                mask_pred_probs = F.softmax(local_preds.float(), dim=1)
+                mask_true_onehot = (
+                    F.one_hot(local_labels, n_categories + 1)
+                    .permute(0, 4, 1, 2, 3)
+                    .float()
+                )
+
+                # Dice loss uses probabilities
+                dice_score_probs = compute_sharded_dice(
+                    mask_pred_probs, mask_true_onehot, spatial_mesh
                 )
             global_ce_sum = SpatialAllReduce.apply(local_ce_sum, spatial_mesh)
 
@@ -102,19 +114,6 @@ def evaluate(
             )
             CE_loss = global_ce_sum / global_total_voxels
 
-            # --- 2. Format Predictions & Labels (Strictly Multiclass) ---
-            with torch.autocast(device_type=autocast_device_type, enabled=False):
-                mask_pred_probs = F.softmax(local_preds.float(), dim=1)
-                mask_true_onehot = (
-                    F.one_hot(local_labels, n_categories + 1)
-                    .permute(0, 4, 1, 2, 3)
-                    .float()
-                )
-
-                # Dice loss uses probabilities
-                dice_score_probs = compute_sharded_dice(
-                    mask_pred_probs, mask_true_onehot, spatial_mesh
-                )
             dice_loss_curr = 1.0 - dice_score_probs.mean()
 
             # Eval metric (excluding background class 0)

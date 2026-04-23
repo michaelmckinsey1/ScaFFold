@@ -435,10 +435,22 @@ class PyTorchTrainer(BaseTrainer):
                     f"  warmup: Calculating sharded loss. Mem: {current_mem:.2f} GB."
                 )
 
-                # 1. Sharded Cross Entropy
                 with torch.autocast(**self._autocast_kwargs(enabled=False)):
+                    # 1. Sharded Cross Entropy
                     local_ce_sum = F.cross_entropy(
                         local_preds.float(), local_labels, reduction="sum"
+                    )
+                    # 2. Sharded Dice Loss
+                    local_preds_softmax = F.softmax(local_preds.float(), dim=1)
+                    local_labels_one_hot = (
+                        F.one_hot(
+                            local_labels, num_classes=self.config.n_categories + 1
+                        )
+                        .permute(0, 4, 1, 2, 3)
+                        .float()
+                    )
+                    dice_scores = compute_sharded_dice(
+                        local_preds_softmax, local_labels_one_hot, self.spatial_mesh
                     )
 
                 # Pass the spatial_mesh directly
@@ -454,19 +466,6 @@ class PyTorchTrainer(BaseTrainer):
                 )
                 loss_ce = global_ce_sum / global_total_voxels
 
-                # 2. Sharded Dice Loss
-                with torch.autocast(**self._autocast_kwargs(enabled=False)):
-                    local_preds_softmax = F.softmax(local_preds.float(), dim=1)
-                    local_labels_one_hot = (
-                        F.one_hot(
-                            local_labels, num_classes=self.config.n_categories + 1
-                        )
-                        .permute(0, 4, 1, 2, 3)
-                        .float()
-                    )
-                    dice_scores = compute_sharded_dice(
-                        local_preds_softmax, local_labels_one_hot, self.spatial_mesh
-                    )
                 loss_dice = 1.0 - dice_scores.mean()
 
                 # 3. Combine Loss
@@ -631,12 +630,30 @@ class PyTorchTrainer(BaseTrainer):
                                 f"Calculating sharded loss. Mem: {current_mem:.2f} GB."
                             )
 
-                            # 1. Sharded Cross Entropy
                             with torch.autocast(**self._autocast_kwargs(enabled=False)):
+                                # 1. Sharded Cross Entropy
                                 local_ce_sum = F.cross_entropy(
                                     local_preds.float(),
                                     local_labels,
                                     reduction="sum",
+                                )
+                                # Sharded Dice Loss
+                                local_preds_softmax = F.softmax(
+                                    local_preds.float(), dim=1
+                                )
+                                local_labels_one_hot = (
+                                    F.one_hot(
+                                        local_labels,
+                                        num_classes=self.config.n_categories + 1,
+                                    )
+                                    .permute(0, 4, 1, 2, 3)
+                                    .float()
+                                )
+                                # Compute sharded dice
+                                dice_scores = compute_sharded_dice(
+                                    local_preds_softmax,
+                                    local_labels_one_hot,
+                                    self.spatial_mesh,
                                 )
 
                             # Pass the spatial_mesh directly
@@ -654,26 +671,6 @@ class PyTorchTrainer(BaseTrainer):
                             )
                             loss_ce = global_ce_sum / global_total_voxels
 
-                            # 2. Sharded Dice Loss
-                            with torch.autocast(**self._autocast_kwargs(enabled=False)):
-                                local_preds_softmax = F.softmax(
-                                    local_preds.float(), dim=1
-                                )
-                                local_labels_one_hot = (
-                                    F.one_hot(
-                                        local_labels,
-                                        num_classes=self.config.n_categories + 1,
-                                    )
-                                    .permute(0, 4, 1, 2, 3)
-                                    .float()
-                                )
-
-                                # Compute sharded dice using new function
-                                dice_scores = compute_sharded_dice(
-                                    local_preds_softmax,
-                                    local_labels_one_hot,
-                                    self.spatial_mesh,
-                                )
                             loss_dice = 1.0 - dice_scores.mean()
 
                             # 3. Combine Loss
