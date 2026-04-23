@@ -127,7 +127,7 @@ def evaluate(
             # --- Combine and Accumulate ---
             loss = CE_loss + (1.0 - batch_dice_score)
             val_loss_epoch += loss.item()
-            total_dice_score += batch_dice_score.item()
+            total_dice_score += batch_dice_score
             processed_batches += 1
 
     net.train()
