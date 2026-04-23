@@ -30,6 +30,12 @@ from ScaFFold.utils.perf_measure import annotate
 def evaluate(
     net, dataloader, device, amp, primary, criterion, n_categories, parallel_strategy
 ):
+
+    def foreground_dice_mean(dice_scores):
+        if dice_scores.size(1) > 1:
+            return dice_scores[:, 1:].mean().item()
+        return dice_scores.mean().item()
+
     net.eval()
     autocast_device_type = device.type if device.type != "mps" else "cpu"
     autocast_kwargs = {"device_type": autocast_device_type, "enabled": amp}
@@ -114,14 +120,12 @@ def evaluate(
             )
             CE_loss = global_ce_sum / global_total_voxels
 
-            dice_loss_curr = 1.0 - dice_score_probs.mean()
-
             # Eval metric (excluding background class 0)
-            # dice_score_probs shape is [Batch, Channels]. We slice [:, 1:] to drop background
-            batch_dice_score = dice_score_probs[:, 1:].mean()
+            # dice_score_probs shape is [Batch, Channels].
+            batch_dice_score = foreground_dice_mean(dice_score_probs)
 
             # --- Combine and Accumulate ---
-            loss = CE_loss + dice_loss_curr
+            loss = CE_loss + (1.0 - batch_dice_score)
             val_loss_epoch += loss.item()
             total_dice_score += batch_dice_score.item()
             processed_batches += 1

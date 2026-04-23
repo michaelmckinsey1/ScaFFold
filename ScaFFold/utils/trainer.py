@@ -224,6 +224,13 @@ class BaseTrainer:
             kwargs["dtype"] = self.amp_dtype
         return kwargs
 
+    @staticmethod
+    def _foreground_dice_mean(dice_scores):
+        """Match optimization to the reported validation metric by excluding background."""
+        if dice_scores.size(1) > 1:
+            return dice_scores[:, 1:].mean().item()
+        return dice_scores.mean().item()
+
 
 class PyTorchTrainer(BaseTrainer):
     """
@@ -466,10 +473,11 @@ class PyTorchTrainer(BaseTrainer):
                 )
                 loss_ce = global_ce_sum / global_total_voxels
 
-                loss_dice = 1.0 - dice_scores.mean()
+                # Dice score
+                batch_dice_score = self._foreground_dice_mean(dice_scores)
 
                 # 3. Combine Loss
-                loss = loss_ce + loss_dice
+                loss = loss_ce + (1.0 - batch_dice_score)
 
             self.log.debug(
                 "  warmup: loss calculation complete. Proceeding to backward pass"
@@ -492,7 +500,7 @@ class PyTorchTrainer(BaseTrainer):
                 local_preds_softmax,
                 local_labels_one_hot,
             )
-            del loss_ce, loss_dice, loss
+            del loss_ce, loss
 
             if self.world_rank == 0:
                 peak_alloc = torch.cuda.max_memory_allocated() / (1024**3)
@@ -671,11 +679,12 @@ class PyTorchTrainer(BaseTrainer):
                             )
                             loss_ce = global_ce_sum / global_total_voxels
 
-                            loss_dice = 1.0 - dice_scores.mean()
+                            # Dice score
+                            batch_dice_score = self._foreground_dice_mean(dice_scores)
 
                             # 3. Combine Loss
-                            loss = loss_ce + loss_dice
-                            train_dice_total += dice_scores[:, 1:].mean().item()
+                            loss = loss_ce + (1.0 - batch_dice_score)
+                            train_dice_total += batch_dice_score
 
                             end_code_region("calculate_loss")
 
@@ -751,7 +760,8 @@ class PyTorchTrainer(BaseTrainer):
                 self.log.info(
                     f" epoch {epoch} \
                             | train_dice_loss {train_dice:.6f} (type {type(train_dice)}) \
-                            | val_dice_score {val_score:.6f}"
+                            | val_dice_score {val_score:.6f} \
+                            | lr {self.config.learning_rate:.8f}"
                 )
                 self.log.debug(f" writing to csv at {self.outfile_path}")
                 if self.world_rank == 0:
