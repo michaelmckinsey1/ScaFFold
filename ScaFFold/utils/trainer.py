@@ -28,8 +28,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ScaFFold.utils.checkpointing import CheckpointManager
-from ScaFFold.utils.data_types import AMP_DTYPE
 from ScaFFold.utils.data_loading import FractalDataset, SpatialShardSpec
+from ScaFFold.utils.data_types import AMP_DTYPE
 from ScaFFold.utils.dice_score import (
     SpatialAllReduce,
     compute_sharded_dice,
