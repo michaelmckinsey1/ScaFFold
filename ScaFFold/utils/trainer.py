@@ -28,8 +28,12 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ScaFFold.utils.checkpointing import CheckpointManager
+from ScaFFold.utils.data_types import AMP_DTYPE
 from ScaFFold.utils.data_loading import FractalDataset, SpatialShardSpec
-from ScaFFold.utils.dice_score import SpatialAllReduce, compute_sharded_dice
+from ScaFFold.utils.dice_score import (
+    SpatialAllReduce,
+    compute_sharded_dice,
+)
 from ScaFFold.utils.distributed import get_local_rank, get_world_rank, get_world_size
 
 # Local
@@ -48,6 +52,9 @@ class BaseTrainer:
         self.config = config
         self.device = device
         self.log = log
+        self.amp_device_type = self.device.type if self.device.type != "mps" else "cpu"
+        self.amp_dtype = AMP_DTYPE
+        self.use_grad_scaler = False
         self.world_size = get_world_size(required=self.config.dist)
         self.world_rank = get_world_rank(required=self.config.dist)
         self.local_rank = get_local_rank(required=self.config.dist)
@@ -194,7 +201,8 @@ class BaseTrainer:
         )
 
         # Set up gradient scaler for AMP (Automatic Mixed Precision)
-        self.grad_scaler = torch.amp.GradScaler("cuda", enabled=self.config.torch_amp)
+        self.use_grad_scaler = self.config.torch_amp and self.amp_dtype == torch.float16
+        self.grad_scaler = torch.amp.GradScaler("cuda", enabled=self.use_grad_scaler)
 
         # Set up loss function
         self.criterion = (
@@ -204,8 +212,17 @@ class BaseTrainer:
         )
 
         self.log.info(
-            f"Optimizer: {self.optimizer}, Scheduler: {self.scheduler}, Gradient Scaler Enabled: {self.config.torch_amp}"
+            f"Optimizer: {self.optimizer}, Scheduler: {self.scheduler}, AMP dtype: {self.amp_dtype}, Gradient Scaler Enabled: {self.use_grad_scaler}"
         )
+
+    def _autocast_kwargs(self, enabled=None):
+        if enabled is None:
+            enabled = self.config.torch_amp
+
+        kwargs = {"device_type": self.amp_device_type, "enabled": enabled}
+        if enabled:
+            kwargs["dtype"] = self.amp_dtype
+        return kwargs
 
 
 class PyTorchTrainer(BaseTrainer):
@@ -392,10 +409,7 @@ class PyTorchTrainer(BaseTrainer):
             true_masks_dc = DCTensor.from_shard(true_masks, self.ps)
             self._get_memsize(images_dc, "Sharded image", self.config.verbose)
 
-            with torch.autocast(
-                self.device.type if self.device.type != "mps" else "cpu",
-                enabled=self.config.torch_amp,
-            ):
+            with torch.autocast(**self._autocast_kwargs()):
                 # Forward on DCTensor
                 self.log.debug("  warmup: running forward pass")
                 masks_pred_dc = self.model(images_dc)
@@ -422,10 +436,7 @@ class PyTorchTrainer(BaseTrainer):
                 )
 
                 # 1. Sharded Cross Entropy
-                with torch.autocast(
-                    self.device.type if self.device.type != "mps" else "cpu",
-                    enabled=False,
-                ):
+                with torch.autocast(**self._autocast_kwargs(enabled=False)):
                     local_ce_sum = F.cross_entropy(
                         local_preds.float(), local_labels, reduction="sum"
                     )
@@ -444,15 +455,18 @@ class PyTorchTrainer(BaseTrainer):
                 loss_ce = global_ce_sum / global_total_voxels
 
                 # 2. Sharded Dice Loss
-                local_preds_softmax = F.softmax(local_preds, dim=1).float()
-                local_labels_one_hot = (
-                    F.one_hot(local_labels, num_classes=self.config.n_categories + 1)
-                    .permute(0, 4, 1, 2, 3)
-                    .float()
-                )
-                dice_scores = compute_sharded_dice(
-                    local_preds_softmax, local_labels_one_hot, self.spatial_mesh
-                )
+                with torch.autocast(**self._autocast_kwargs(enabled=False)):
+                    local_preds_softmax = F.softmax(local_preds.float(), dim=1)
+                    local_labels_one_hot = (
+                        F.one_hot(
+                            local_labels, num_classes=self.config.n_categories + 1
+                        )
+                        .permute(0, 4, 1, 2, 3)
+                        .float()
+                    )
+                    dice_scores = compute_sharded_dice(
+                        local_preds_softmax, local_labels_one_hot, self.spatial_mesh
+                    )
                 loss_dice = 1.0 - dice_scores.mean()
 
                 # 3. Combine Loss
@@ -585,10 +599,7 @@ class PyTorchTrainer(BaseTrainer):
                             images_dc, "Sharded image", self.config.verbose
                         )
 
-                        with torch.autocast(
-                            self.device.type if self.device.type != "mps" else "cpu",
-                            enabled=self.config.torch_amp,
-                        ):
+                        with torch.autocast(**self._autocast_kwargs()):
                             # Predict on this batch
                             torch.cuda.reset_peak_memory_stats()
                             gather_and_print_mem(self.log, "pre_forward")
@@ -621,12 +632,7 @@ class PyTorchTrainer(BaseTrainer):
                             )
 
                             # 1. Sharded Cross Entropy
-                            with torch.autocast(
-                                self.device.type
-                                if self.device.type != "mps"
-                                else "cpu",
-                                enabled=False,
-                            ):
+                            with torch.autocast(**self._autocast_kwargs(enabled=False)):
                                 local_ce_sum = F.cross_entropy(
                                     local_preds.float(),
                                     local_labels,
@@ -649,22 +655,25 @@ class PyTorchTrainer(BaseTrainer):
                             loss_ce = global_ce_sum / global_total_voxels
 
                             # 2. Sharded Dice Loss
-                            local_preds_softmax = F.softmax(local_preds, dim=1).float()
-                            local_labels_one_hot = (
-                                F.one_hot(
-                                    local_labels,
-                                    num_classes=self.config.n_categories + 1,
+                            with torch.autocast(**self._autocast_kwargs(enabled=False)):
+                                local_preds_softmax = F.softmax(
+                                    local_preds.float(), dim=1
                                 )
-                                .permute(0, 4, 1, 2, 3)
-                                .float()
-                            )
+                                local_labels_one_hot = (
+                                    F.one_hot(
+                                        local_labels,
+                                        num_classes=self.config.n_categories + 1,
+                                    )
+                                    .permute(0, 4, 1, 2, 3)
+                                    .float()
+                                )
 
-                            # Compute sharded dice using new function
-                            dice_scores = compute_sharded_dice(
-                                local_preds_softmax,
-                                local_labels_one_hot,
-                                self.spatial_mesh,
-                            )
+                                # Compute sharded dice using new function
+                                dice_scores = compute_sharded_dice(
+                                    local_preds_softmax,
+                                    local_labels_one_hot,
+                                    self.spatial_mesh,
+                                )
                             loss_dice = 1.0 - dice_scores.mean()
 
                             # 3. Combine Loss
