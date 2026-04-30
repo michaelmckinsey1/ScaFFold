@@ -29,7 +29,7 @@ from tqdm import tqdm
 
 from ScaFFold.utils.checkpointing import CheckpointManager
 from ScaFFold.utils.data_loading import FractalDataset, SpatialShardSpec
-from ScaFFold.utils.data_types import AMP_DTYPE
+from ScaFFold.utils.data_types import AMP_DTYPE, VOLUME_DTYPE
 from ScaFFold.utils.dice_score import (
     SpatialAllReduce,
     compute_sharded_dice,
@@ -445,12 +445,26 @@ class PyTorchTrainer(BaseTrainer):
                     f"  warmup: Calculating sharded loss. Mem: {current_mem:.2f} GB."
                 )
 
+                # Calculate CE and Dice loss in single precision for numerical stability.
                 with torch.autocast(**self._autocast_kwargs(enabled=False)):
-                    # 1. Sharded Cross Entropy
+                    # Compute global CE loss from sharded CE loss
                     local_ce_sum = F.cross_entropy(
                         local_preds.float(), local_labels, reduction="sum"
                     )
-                    # 2. Sharded Dice Loss
+                    global_ce_sum = SpatialAllReduce.apply(
+                        local_ce_sum, self.spatial_mesh
+                    )
+                    local_voxel_count = torch.tensor(
+                        float(local_labels.numel()),
+                        device=local_labels.device,
+                        dtype=VOLUME_DTYPE,
+                    )
+                    global_total_voxels = SpatialAllReduce.apply(
+                        local_voxel_count, self.spatial_mesh
+                    )
+                    loss_ce = global_ce_sum / global_total_voxels
+
+                    # Compute global dice loss from sharded dice loss
                     local_preds_softmax = F.softmax(local_preds.float(), dim=1)
                     local_labels_one_hot = (
                         F.one_hot(
@@ -462,25 +476,10 @@ class PyTorchTrainer(BaseTrainer):
                     dice_scores = compute_sharded_dice(
                         local_preds_softmax, local_labels_one_hot, self.spatial_mesh
                     )
+                    batch_dice_score = self._foreground_dice_mean(dice_scores)
 
-                # Pass the spatial_mesh directly
-                global_ce_sum = SpatialAllReduce.apply(local_ce_sum, self.spatial_mesh)
-
-                local_voxel_count = torch.tensor(
-                    float(local_labels.numel()),
-                    device=local_labels.device,
-                    dtype=torch.float32,
-                )
-                global_total_voxels = SpatialAllReduce.apply(
-                    local_voxel_count, self.spatial_mesh
-                )
-                loss_ce = global_ce_sum / global_total_voxels
-
-                # Dice score
-                batch_dice_score = self._foreground_dice_mean(dice_scores)
-
-                # 3. Combine Loss
-                loss = loss_ce + (1.0 - batch_dice_score)
+                    # Sum global CE Loss and Dice loss
+                    loss = loss_ce + (1.0 - batch_dice_score)
 
             self.log.debug(
                 "  warmup: loss calculation complete. Proceeding to backward pass"
@@ -641,14 +640,28 @@ class PyTorchTrainer(BaseTrainer):
                                 f"Calculating sharded loss. Mem: {current_mem:.2f} GB."
                             )
 
+                            # Calculate CE and Dice loss in single precision for numerical stability.
                             with torch.autocast(**self._autocast_kwargs(enabled=False)):
-                                # 1. Sharded Cross Entropy
+                                # Compute global CE loss from sharded CE loss
                                 local_ce_sum = F.cross_entropy(
                                     local_preds.float(),
                                     local_labels,
                                     reduction="sum",
                                 )
-                                # Sharded Dice Loss
+                                global_ce_sum = SpatialAllReduce.apply(
+                                    local_ce_sum, self.spatial_mesh
+                                )
+                                local_voxel_count = torch.tensor(
+                                    float(local_labels.numel()),
+                                    device=local_labels.device,
+                                    dtype=VOLUME_DTYPE,
+                                )
+                                global_total_voxels = SpatialAllReduce.apply(
+                                    local_voxel_count, self.spatial_mesh
+                                )
+                                loss_ce = global_ce_sum / global_total_voxels
+
+                                # Compute global dice loss from sharded dice loss
                                 local_preds_softmax = F.softmax(
                                     local_preds.float(), dim=1
                                 )
@@ -660,34 +673,18 @@ class PyTorchTrainer(BaseTrainer):
                                     .permute(0, 4, 1, 2, 3)
                                     .float()
                                 )
-                                # Compute sharded dice
                                 dice_scores = compute_sharded_dice(
                                     local_preds_softmax,
                                     local_labels_one_hot,
                                     self.spatial_mesh,
                                 )
+                                batch_dice_score = self._foreground_dice_mean(
+                                    dice_scores
+                                )
 
-                            # Pass the spatial_mesh directly
-                            global_ce_sum = SpatialAllReduce.apply(
-                                local_ce_sum, self.spatial_mesh
-                            )
-
-                            local_voxel_count = torch.tensor(
-                                float(local_labels.numel()),
-                                device=local_labels.device,
-                                dtype=torch.float32,
-                            )
-                            global_total_voxels = SpatialAllReduce.apply(
-                                local_voxel_count, self.spatial_mesh
-                            )
-                            loss_ce = global_ce_sum / global_total_voxels
-
-                            # Dice score
-                            batch_dice_score = self._foreground_dice_mean(dice_scores)
-
-                            # 3. Combine Loss
-                            loss = loss_ce + (1.0 - batch_dice_score)
-                            train_dice_total += batch_dice_score.item()
+                                # Sum global CE Loss and Dice loss
+                                loss = loss_ce + (1.0 - batch_dice_score)
+                                train_dice_total += batch_dice_score.item()
 
                             end_code_region("calculate_loss")
 
