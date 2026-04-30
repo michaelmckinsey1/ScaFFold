@@ -172,17 +172,15 @@ class BaseTrainer:
         self.train_loader = DataLoader(
             self.train_set, sampler=self.train_sampler, **loader_args
         )
-        val_loader_args = dict(loader_args)
-        val_loader_args["batch_size"] = self.config.val_batch_size
         self.val_loader = DataLoader(
-            self.val_set, sampler=self.val_sampler, drop_last=False, **val_loader_args
+            self.val_set, sampler=self.val_sampler, drop_last=False, **loader_args
         )
         if len(self.val_loader) == 0:
             raise ValueError(
                 "Validation DataLoader has zero batches. "
-                f"n_val={self.n_val}, val_batch_size={self.config.val_batch_size}, "
+                f"n_val={self.n_val}, batch_size={self.config.batch_size}, "
                 f"data_num_replicas={self.data_num_replicas}. "
-                "Reduce val_batch_size or adjust validation sharding."
+                "Reduce batch_size or adjust validation sharding."
             )
 
     def setup_training_components(self):

@@ -50,7 +50,6 @@ class Config:
         self.n_instances_used_per_fractal = config_dict["n_instances_used_per_fractal"]
         self.scale = 1
         self.batch_size = config_dict["batch_size"]
-        self.val_batch_size = config_dict["val_batch_size"]
         self.dataloader_num_workers = config_dict["dataloader_num_workers"]
         self.epochs = config_dict["epochs"]
         self.optimizer = config_dict["optimizer"]
