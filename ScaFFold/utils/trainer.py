@@ -201,7 +201,8 @@ class BaseTrainer:
         )
 
         # Set up gradient scaler for AMP (Automatic Mixed Precision)
-        self.use_grad_scaler = self.config.torch_amp and self.amp_dtype == torch.float16
+        # bfloat does not need grad scaler
+        self.use_grad_scaler = self.config.torch_amp and self.amp_dtype != torch.bfloat16
         self.grad_scaler = torch.amp.GradScaler("cuda", enabled=self.use_grad_scaler)
 
         # Set up loss function
