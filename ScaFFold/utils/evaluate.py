@@ -30,7 +30,6 @@ from ScaFFold.utils.perf_measure import annotate
 def evaluate(
     net, dataloader, device, amp, primary, criterion, n_categories, parallel_strategy
 ):
-
     def foreground_dice_stats(dice_scores):
         if dice_scores.size(1) > 1:
             per_sample_scores = dice_scores[:, 1:].mean(dim=1)
@@ -139,4 +138,10 @@ def evaluate(
         print(
             f"evaluate.py: dice_score={total_dice_score}, val_loss_epoch={val_loss_epoch}, val_loss_avg={val_loss_avg}, num_val_batches={processed_batches}, num_val_samples={processed_samples}"
         )
-    return total_dice_score, val_loss_epoch, val_loss_avg, processed_batches, processed_samples
+    return (
+        total_dice_score,
+        val_loss_epoch,
+        val_loss_avg,
+        processed_batches,
+        processed_samples,
+    )
