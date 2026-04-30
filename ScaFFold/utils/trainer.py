@@ -130,7 +130,7 @@ class BaseTrainer:
         )
         self.n_train = len(self.train_set)
         self.n_val = len(self.val_set)
-        self.log.debug(
+        self.log.info(
             f"Datasets created with n_train={self.n_train}, n_val={self.n_val}"
         )
 
@@ -172,9 +172,18 @@ class BaseTrainer:
         self.train_loader = DataLoader(
             self.train_set, sampler=self.train_sampler, **loader_args
         )
+        val_loader_args = dict(loader_args)
+        val_loader_args["batch_size"] = self.config.val_batch_size
         self.val_loader = DataLoader(
-            self.val_set, sampler=self.val_sampler, drop_last=True, **loader_args
+            self.val_set, sampler=self.val_sampler, drop_last=False, **val_loader_args
         )
+        if len(self.val_loader) == 0:
+            raise ValueError(
+                "Validation DataLoader has zero batches. "
+                f"n_val={self.n_val}, val_batch_size={self.config.val_batch_size}, "
+                f"data_num_replicas={self.data_num_replicas}. "
+                "Reduce val_batch_size or adjust validation sharding."
+            )
 
     def setup_training_components(self):
         """Set up the optimizer, scheduler, gradient scaler, and loss function."""
@@ -233,8 +242,8 @@ class BaseTrainer:
     def _foreground_dice_mean(dice_scores):
         """Match optimization to the reported validation metric by excluding background."""
         if dice_scores.size(1) > 1:
-            return dice_scores[:, 1:].mean().item()
-        return dice_scores.mean().item()
+            return dice_scores[:, 1:].mean()
+        return dice_scores.mean()
 
     def _current_learning_rate(self):
         if self.optimizer is None or not self.optimizer.param_groups:
@@ -694,7 +703,7 @@ class PyTorchTrainer(BaseTrainer):
 
                             # 3. Combine Loss
                             loss = loss_ce + (1.0 - batch_dice_score)
-                            train_dice_total += batch_dice_score
+                            train_dice_total += batch_dice_score.item()
 
                             end_code_region("calculate_loss")
 
@@ -730,7 +739,13 @@ class PyTorchTrainer(BaseTrainer):
                 #
                 # Evaluate model on validation set, update LR if necessary
                 #
-                dice_sum, val_loss_epoch, val_loss_avg, numbatch = evaluate(
+                (
+                    dice_sum,
+                    val_loss_epoch,
+                    val_loss_avg,
+                    numbatch,
+                    numsamples,
+                ) = evaluate(
                     self.model,
                     self.val_loader,
                     self.device,
@@ -740,7 +755,7 @@ class PyTorchTrainer(BaseTrainer):
                     self.config.n_categories,
                     self.config._parallel_strategy,
                 )
-                dice_info = torch.tensor([dice_sum, numbatch])
+                dice_info = torch.tensor([dice_sum, numsamples], dtype=torch.float64)
                 if self.config.dist:
                     dice_info = dice_info.to(device=self.device)
                     torch.distributed.all_reduce(
