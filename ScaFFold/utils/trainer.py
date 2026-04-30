@@ -684,7 +684,7 @@ class PyTorchTrainer(BaseTrainer):
 
                                 # Sum global CE Loss and Dice loss
                                 loss = loss_ce + (1.0 - batch_dice_score)
-                                train_dice_total += batch_dice_score.item()
+                                train_dice_total += batch_dice_score
 
                             end_code_region("calculate_loss")
 
@@ -756,7 +756,7 @@ class PyTorchTrainer(BaseTrainer):
                 #
                 # Write out data for this epoch to train stats csv
                 #
-                train_dice = float(train_dice_total / len(self.train_loader))
+                train_dice = float(train_dice_total.item() / len(self.train_loader))
                 self.log.info(
                     f" epoch {epoch} \
                             | train_dice_loss {train_dice:.6f} (type {type(train_dice)}) \
