@@ -39,7 +39,6 @@ INCLUDE_KEYS = [
     "variance_threshold",
     "n_fracts_per_vol",
     "val_split",
-    "fract_base_dir",
 ]
 
 
