@@ -81,9 +81,7 @@ def main(config: Config):
 
     # Setup directories
     fracts_sub_dir = f"var{config.variance_threshold}"
-    fracts_read_dir = os.path.join(
-        config.fract_base_dir, fracts_sub_dir, "3DIFS_param"
-    )
+    fracts_read_dir = os.path.join(config.fract_base_dir, fracts_sub_dir, "3DIFS_param")
     instance_write_dir = os.path.join(
         config.fract_base_dir, fracts_sub_dir, "instances", f"np{config.point_num}"
     )
