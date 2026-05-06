@@ -218,9 +218,7 @@ def main(kwargs_dict: dict = {}):
         num_spatial_dims = len(ps.shard_dim)
         trainer.ddp_placements = [Shard(0)] + [Replicate()] * num_spatial_dims
         total_shards = math.prod(config.dc_num_shards)
-        global_batch_size = config.batch_size * (
-            world_size // total_shards
-        )
+        global_batch_size = config.batch_size * (world_size // total_shards)
         ddp_ranks = world_size // total_shards
         if rank == 0:
             log.info(
