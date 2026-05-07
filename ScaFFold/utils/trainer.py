@@ -267,20 +267,6 @@ class BaseTrainer:
             return self.config.starting_learning_rate
         return self.optimizer.param_groups[0]["lr"]
 
-    def _timing_ddp_rank(self):
-        if self.ps is None:
-            return self.world_rank
-        return self.ps.ddp_ind
-
-    def _timing_shard_label(self):
-        if self.ps is None:
-            return "replicated"
-        return "x".join(str(shard_index) for shard_index in self.ps.shard_ind)
-
-    def _sync_device_for_timing(self):
-        if self.device.type == "cuda":
-            torch.cuda.synchronize(self.device)
-
 
 class PyTorchTrainer(BaseTrainer):
     """
@@ -621,7 +607,6 @@ class PyTorchTrainer(BaseTrainer):
                     for batch_idx, batch in enumerate(self.train_loader):
                         time_minibatch = batch_idx == 0 and self.world_rank == 0
                         if time_minibatch:
-                            self._sync_device_for_timing()
                             minibatch_start_time = time.perf_counter()
 
                         # Load initial samples and labels
@@ -744,21 +729,11 @@ class PyTorchTrainer(BaseTrainer):
                         # Stay on GPU
                         epoch_loss += loss.detach()
                         if time_minibatch:
-                            self._sync_device_for_timing()
+                            # This sync has some potential performance impact
+                            # TODO: Would be better to measure this with Caliper, which uses CUDA events.
+                            torch.cuda.synchronize(self.device)
                             minibatch_time_s = (
                                 time.perf_counter() - minibatch_start_time
-                            )
-                            print(
-                                "MINIBATCH_TIMER "
-                                f"epoch={epoch} "
-                                f"batch_idx={batch_idx} "
-                                f"global_step={self.global_step} "
-                                f"ddp_rank={self._timing_ddp_rank()} "
-                                f"world_rank={self.world_rank} "
-                                f"local_rank={self.local_rank} "
-                                f"shard_index={self._timing_shard_label()} "
-                                f"batch_size={images_dc.shape[0]} "
-                                f"minibatch_time_s={minibatch_time_s:.6f}",
                             )
                         end_code_region("update_loss")
                     end_code_region("batch_loop")
@@ -827,7 +802,7 @@ class PyTorchTrainer(BaseTrainer):
                     )
                     outfile.flush()
                     print(
-                        f"Epoch {epoch} completed in {epoch_duration} seconds. Total train time so far: {time.time() - start}"
+                        f"Epoch {epoch} completed in {epoch_duration} seconds. Total train time so far: {time.time() - start}. Rank 0 first batch minibatch_time_s={minibatch_time_s:.6f}."
                     )
 
                 #
