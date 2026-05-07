@@ -421,143 +421,134 @@ class PyTorchTrainer(BaseTrainer):
         if self.config.dist:
             self.train_loader.sampler.set_epoch(0)
 
-        # Match the main training path as closely as possible.
-        self.model.train()
-        self.optimizer.zero_grad(set_to_none=False)
         start_warmup = time.time()
         max_batches = min(warmup_batches, len(self.train_loader))
         self.log.info(f"Running {max_batches} warmup batch(es) per rank")
+        snapshot = self.checkpoint_manager.snapshot_training_state()
 
-        for batch_idx, batch in enumerate(self.train_loader):
-            if batch_idx >= max_batches:
-                break
-
-            images, true_masks = batch["image"], batch["mask"]
-
-            images = images.to(
-                device=self.device,
-                dtype=VOLUME_TORCH_DTYPE,
-                memory_format=torch.channels_last_3d,
-                non_blocking=True,
-            )
-            true_masks = true_masks.to(
-                device=self.device, dtype=torch.long, non_blocking=True
-            ).contiguous()
-
-            # Add a dummy channel dimension to get 5D [B, 1, D, H, W]
-            true_masks = true_masks.unsqueeze(1)
-
-            # Inputs are already loaded as local shards by the dataset.
-            images_dc = DCTensor.from_shard(images, self.ps)
-            true_masks_dc = DCTensor.from_shard(true_masks, self.ps)
-            self._get_memsize(images_dc, "Sharded image", self.config.verbose)
-
-            with torch.autocast(**self._autocast_kwargs()):
-                # Forward on DCTensor
-                self.log.debug("  warmup: running forward pass")
-                masks_pred_dc = self.model(images_dc)
-                self.log.debug("  warmup: forward pass complete")
-
-                # Extract the underlying PyTorch local tensors
-                local_preds = masks_pred_dc
-                local_labels_5d = true_masks_dc
-
-                # Remove the dummy channel dimension so CE Loss is happy [B, D, H, W]
-                local_labels = local_labels_5d.squeeze(1)
-                if self.world_rank == 0:
-                    self.log.debug(f"  warmup: Local Preds Shape: {local_preds.shape}")
-                    # Should be something like [1, 6, 128, 128, 64] if sharding Width by 2
-                    self.log.debug(
-                        f"  warmup: Local Labels Shape: {local_labels.shape}"
-                    )
-                    # Should be something like [1, 128, 128, 64]
-
-                # --- SHARDED LOSS CALCULATION ---
-                current_mem = torch.cuda.memory_allocated() / (1024**3)
-                self.log.debug(
-                    f"  warmup: Calculating sharded loss. Mem: {current_mem:.2f} GB."
-                )
-
-                # Calculate CE and Dice loss in single precision for numerical stability.
-                with torch.autocast(**self._autocast_kwargs(enabled=False)):
-                    loss_ce = compute_sharded_cross_entropy_loss(
-                        local_preds,
-                        local_labels,
-                        self.spatial_mesh,
-                        self.config.dc_num_shards,
-                        self.amp_device_type,
-                        self.ce_class_weights,
-                    )
-
-                    local_preds_softmax = F.softmax(local_preds.float(), dim=1)
-                    local_labels_one_hot = (
-                        F.one_hot(
-                            local_labels, num_classes=self.config.n_categories + 1
-                        )
-                        .permute(0, 4, 1, 2, 3)
-                        .float()
-                    )
-                    dice_scores = compute_sharded_dice(
-                        local_preds_softmax, local_labels_one_hot, self.spatial_mesh
-                    )
-                    batch_dice_score = self._foreground_dice_mean(dice_scores)
-
-                    # Sum global CE Loss and Dice loss
-                    loss = loss_ce + (1.0 - batch_dice_score)
-
-            self.log.debug(
-                "  warmup: loss calculation complete. Proceeding to backward pass"
-            )
-
-            # Backward pass
-            self.grad_scaler.scale(loss).backward()
-            self.grad_scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            self.log.debug("  warmup: backward pass complete. Stepping optimizer")
-
-            self.grad_scaler.step(self.optimizer)
-            self.grad_scaler.update()
-
-            # Free memory aggressively
-            del images_dc, true_masks_dc, masks_pred_dc
-            del (
-                local_preds,
-                local_labels,
-                local_preds_softmax,
-                local_labels_one_hot,
-            )
-            del loss_ce, loss
-
-            if self.world_rank == 0:
-                peak_alloc = torch.cuda.max_memory_allocated() / (1024**3)
-                peak_reserved = torch.cuda.max_memory_reserved() / (1024**3)
-                self.log.debug(
-                    f"[MEM-PEAK] Peak alloc: {peak_alloc:.2f} GiB | Peak reserved: {peak_reserved:.2f} GiB",
-                )
-            batch_t_end = time.time()
-            self.log.debug(
-                f"  warmup: batch {batch_idx} completed in {batch_t_end - start_warmup} seconds"
-            )
-
-        # Nuke any accumulated grads so the first real step starts clean
-        for p in self.model.parameters():
-            p.grad = None
-        self.optimizer.zero_grad(set_to_none=True)
-
-        if self.config.dist:
-            self.val_loader.sampler.set_epoch(0)
-
-        evaluate(
-            self.model,
-            self.val_loader,
-            self.device,
-            self.config.torch_amp,
-            self.world_rank == 0,
-            self.criterion,
-            self.config.n_categories,
-            self.config._parallel_strategy,
-        )
+        # Match the main training path as closely as possible, but roll back all
+        # mutable state so warmup does not affect convergence.
         self.model.train()
+        self.optimizer.zero_grad(set_to_none=False)
+
+        try:
+            for batch_idx, batch in enumerate(self.train_loader):
+                if batch_idx >= max_batches:
+                    break
+
+                images, true_masks = batch["image"], batch["mask"]
+
+                images = images.to(
+                    device=self.device,
+                    dtype=VOLUME_TORCH_DTYPE,
+                    memory_format=torch.channels_last_3d,
+                    non_blocking=True,
+                )
+                true_masks = true_masks.to(
+                    device=self.device, dtype=torch.long, non_blocking=True
+                ).contiguous()
+
+                # Add a dummy channel dimension to get 5D [B, 1, D, H, W]
+                true_masks = true_masks.unsqueeze(1)
+
+                # Inputs are already loaded as local shards by the dataset.
+                images_dc = DCTensor.from_shard(images, self.ps)
+                true_masks_dc = DCTensor.from_shard(true_masks, self.ps)
+                self._get_memsize(images_dc, "Sharded image", self.config.verbose)
+
+                with torch.autocast(**self._autocast_kwargs()):
+                    # Forward on DCTensor
+                    self.log.debug("  warmup: running forward pass")
+                    masks_pred_dc = self.model(images_dc)
+                    self.log.debug("  warmup: forward pass complete")
+
+                    # Extract the underlying PyTorch local tensors
+                    local_preds = masks_pred_dc
+                    local_labels_5d = true_masks_dc
+
+                    # Remove the dummy channel dimension so CE Loss is happy [B, D, H, W]
+                    local_labels = local_labels_5d.squeeze(1)
+                    if self.world_rank == 0:
+                        self.log.debug(
+                            f"  warmup: Local Preds Shape: {local_preds.shape}"
+                        )
+                        # Should be something like [1, 6, 128, 128, 64] if sharding Width by 2
+                        self.log.debug(
+                            f"  warmup: Local Labels Shape: {local_labels.shape}"
+                        )
+                        # Should be something like [1, 128, 128, 64]
+
+                    # --- SHARDED LOSS CALCULATION ---
+                    current_mem = torch.cuda.memory_allocated() / (1024**3)
+                    self.log.debug(
+                        f"  warmup: Calculating sharded loss. Mem: {current_mem:.2f} GB."
+                    )
+
+                    # Calculate CE and Dice loss in single precision for numerical stability.
+                    with torch.autocast(**self._autocast_kwargs(enabled=False)):
+                        loss_ce = compute_sharded_cross_entropy_loss(
+                            local_preds,
+                            local_labels,
+                            self.spatial_mesh,
+                            self.config.dc_num_shards,
+                            self.amp_device_type,
+                            self.ce_class_weights,
+                        )
+
+                        local_preds_softmax = F.softmax(local_preds.float(), dim=1)
+                        local_labels_one_hot = (
+                            F.one_hot(
+                                local_labels, num_classes=self.config.n_categories + 1
+                            )
+                            .permute(0, 4, 1, 2, 3)
+                            .float()
+                        )
+                        dice_scores = compute_sharded_dice(
+                            local_preds_softmax,
+                            local_labels_one_hot,
+                            self.spatial_mesh,
+                        )
+                        batch_dice_score = self._foreground_dice_mean(dice_scores)
+
+                        # Sum global CE Loss and Dice loss
+                        loss = loss_ce + (1.0 - batch_dice_score)
+
+                self.log.debug(
+                    "  warmup: loss calculation complete. Proceeding to backward pass"
+                )
+
+                # Backward pass
+                self.grad_scaler.scale(loss).backward()
+                self.grad_scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.log.debug("  warmup: backward pass complete. Stepping optimizer")
+
+                self.grad_scaler.step(self.optimizer)
+                self.grad_scaler.update()
+                self.optimizer.zero_grad(set_to_none=False)
+
+                # Free memory aggressively
+                del images_dc, true_masks_dc, masks_pred_dc
+                del (
+                    local_preds,
+                    local_labels,
+                    local_preds_softmax,
+                    local_labels_one_hot,
+                )
+                del loss_ce, loss
+
+                if self.world_rank == 0:
+                    peak_alloc = torch.cuda.max_memory_allocated() / (1024**3)
+                    peak_reserved = torch.cuda.max_memory_reserved() / (1024**3)
+                    self.log.debug(
+                        f"[MEM-PEAK] Peak alloc: {peak_alloc:.2f} GiB | Peak reserved: {peak_reserved:.2f} GiB",
+                    )
+                batch_t_end = time.time()
+                self.log.debug(
+                    f"  warmup: batch {batch_idx} completed in {batch_t_end - start_warmup} seconds"
+                )
+        finally:
+            self.checkpoint_manager.restore_training_state(snapshot)
 
         if self.config.dist:
             torch.distributed.barrier()
