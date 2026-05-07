@@ -423,7 +423,10 @@ class PyTorchTrainer(BaseTrainer):
 
         start_warmup = time.time()
         max_batches = min(warmup_batches, len(self.train_loader))
-        self.log.info(f"Running {max_batches} warmup batch(es) per rank")
+        max_val_batches = min(warmup_batches, len(self.val_loader))
+        self.log.info(
+            f"Running {max_batches} training warmup batch(es) and {max_val_batches} validation warmup batch(es) per rank"
+        )
         snapshot = self.checkpoint_manager.snapshot_training_state()
 
         # Match the main training path as closely as possible, but roll back all
@@ -546,6 +549,23 @@ class PyTorchTrainer(BaseTrainer):
                 batch_t_end = time.time()
                 self.log.debug(
                     f"  warmup: batch {batch_idx} completed in {batch_t_end - start_warmup} seconds"
+                )
+
+            if self.config.dist:
+                self.val_loader.sampler.set_epoch(0)
+
+            if max_val_batches > 0:
+                self.log.debug("  warmup: running validation warmup pass")
+                evaluate(
+                    self.model,
+                    self.val_loader,
+                    self.device,
+                    self.config.torch_amp,
+                    False,
+                    self.criterion,
+                    self.config.n_categories,
+                    self.config._parallel_strategy,
+                    max_batches=max_val_batches,
                 )
         finally:
             self.checkpoint_manager.restore_training_state(snapshot)
