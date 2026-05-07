@@ -267,6 +267,20 @@ class BaseTrainer:
             return self.config.starting_learning_rate
         return self.optimizer.param_groups[0]["lr"]
 
+    def _timing_ddp_rank(self):
+        if self.ps is None:
+            return self.world_rank
+        return self.ps.ddp_ind
+
+    def _timing_shard_label(self):
+        if self.ps is None:
+            return "replicated"
+        return "x".join(str(shard_index) for shard_index in self.ps.shard_ind)
+
+    def _sync_device_for_timing(self):
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+
 
 class PyTorchTrainer(BaseTrainer):
     """
@@ -349,18 +363,18 @@ class PyTorchTrainer(BaseTrainer):
             with open(self.outfile_path, "a", newline="") as outfile:
                 outfile.write(",".join(headers) + "\n")
 
-    def _truncate_stats_file(self, start_epoch):
+    def _truncate_stats_file(self, start_epoch, path=None):
         """
         Scans the stats file and truncates it at the first occurrence of
         an epoch >= start_epoch. This is O(1) memory and safe for large logs.
         """
-        self.log.info(
-            f"Truncating {self.outfile_path} to remove epochs >= {start_epoch}"
-        )
+        if path is None:
+            path = self.outfile_path
+        self.log.info(f"Truncating {path} to remove epochs >= {start_epoch}")
 
         try:
             # Open in read+update mode ('r+') to allow seeking and truncating
-            with open(self.outfile_path, "r+") as f:
+            with open(path, "r+") as f:
                 header = f.readline()
                 if not header:
                     return
@@ -401,7 +415,7 @@ class PyTorchTrainer(BaseTrainer):
                         pass
 
         except Exception as e:
-            self.log.warning(f"Failed to truncate stats file: {e}")
+            self.log.warning(f"Failed to truncate stats file {path}: {e}")
 
     def _get_memsize(self, tensor, tensor_label: str, verbosity: int = 0):
         """Log size of tensor in memory"""
@@ -604,7 +618,12 @@ class PyTorchTrainer(BaseTrainer):
                     disable=True if self.world_rank != 0 else False,
                 ) as pbar:
                     begin_code_region("batch_loop")
-                    for batch in self.train_loader:
+                    for batch_idx, batch in enumerate(self.train_loader):
+                        time_minibatch = batch_idx == 0 and self.world_rank == 0
+                        if time_minibatch:
+                            self._sync_device_for_timing()
+                            minibatch_start_time = time.perf_counter()
+
                         # Load initial samples and labels
                         images, true_masks = batch["image"], batch["mask"]
 
@@ -724,6 +743,23 @@ class PyTorchTrainer(BaseTrainer):
                         self.global_step += 1
                         # Stay on GPU
                         epoch_loss += loss.detach()
+                        if time_minibatch:
+                            self._sync_device_for_timing()
+                            minibatch_time_s = (
+                                time.perf_counter() - minibatch_start_time
+                            )
+                            print(
+                                "MINIBATCH_TIMER "
+                                f"epoch={epoch} "
+                                f"batch_idx={batch_idx} "
+                                f"global_step={self.global_step} "
+                                f"ddp_rank={self._timing_ddp_rank()} "
+                                f"world_rank={self.world_rank} "
+                                f"local_rank={self.local_rank} "
+                                f"shard_index={self._timing_shard_label()} "
+                                f"batch_size={images_dc.shape[0]} "
+                                f"minibatch_time_s={minibatch_time_s:.6f}",
+                            )
                         end_code_region("update_loss")
                     end_code_region("batch_loop")
 
