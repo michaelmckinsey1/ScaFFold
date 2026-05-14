@@ -7,7 +7,7 @@
 # flux: -qpdebug
 # flux: -B flask
 
-ml cce/21.0.0 cray-mpich/9.1.0 rocm/7.2.1 rccl/fast-env-slows-mpi
+ml cce/21.0.1 cray-mpich/9.1.0 rocm/7.2.1 rccl/fast-env-slows-mpi
 
 . .venvs/scaffoldvenv-tuo-pypi/bin/activate
 
