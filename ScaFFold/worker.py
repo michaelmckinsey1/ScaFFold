@@ -38,8 +38,8 @@ from ScaFFold.utils.distributed import (
     initialize_dist,
 )
 from ScaFFold.utils.perf_measure import (
-    annotate,
     adiak_value,
+    annotate,
     begin_code_region,
     end_code_region,
     get_torch_context,
