@@ -268,27 +268,31 @@ class BaseTrainer:
             return self.config.starting_learning_rate
         return self.optimizer.param_groups[0]["lr"]
 
-    def _publish_fom(self, minibatch_time_s):
+    def _publish_fom(self, minibatch_time_s, completed_epochs):
         """Publish ScaFFold throughput FOM from the representative minibatch time."""
-        global_batch_size = getattr(self.config, "global_batch_size", None)
-        if global_batch_size is None:
-            self.log.warning("Skipping FOM reporting: global_batch_size is not set")
-            return
         if minibatch_time_s <= 0:
             self.log.warning(
                 f"Skipping FOM reporting: invalid minibatch_time_s={minibatch_time_s}"
             )
             return
+        fom_epochs = (
+            completed_epochs if self.config.epochs == -1 else self.config.epochs
+        )
+        if fom_epochs <= 0:
+            self.log.warning(f"Skipping FOM reporting: invalid epochs={fom_epochs}")
+            return
 
-        fom = global_batch_size * self.config.problem_scale / minibatch_time_s
+        problem_size = (2**3) ** self.config.problem_scale
+        fom = problem_size / minibatch_time_s / fom_epochs
         adiak_value("minibatch_time_s", minibatch_time_s)
+        adiak_value("FOM_epochs", fom_epochs)
         adiak_value("FOM", fom)
         if self.world_rank == 0:
             self.log.info(
                 f"FOM = {fom:.6f} "
-                f"(global_batch_size={global_batch_size} * "
-                f"problem_scale={self.config.problem_scale} / "
-                f"minibatch_time_s={minibatch_time_s:.6f})"
+                f"(((2^3)^problem_scale={problem_size}) / "
+                f"minibatch_time_s={minibatch_time_s:.6f} / "
+                f"epochs={fom_epochs})"
             )
 
 
@@ -646,12 +650,8 @@ class PyTorchTrainer(BaseTrainer):
                             time_minibatches and batch_idx < full_train_batches
                         )
                         if time_minibatch:
-                            minibatch_start_event = torch.cuda.Event(
-                                enable_timing=True
-                            )
-                            minibatch_end_event = torch.cuda.Event(
-                                enable_timing=True
-                            )
+                            minibatch_start_event = torch.cuda.Event(enable_timing=True)
+                            minibatch_end_event = torch.cuda.Event(enable_timing=True)
                             minibatch_start_event.record()
                             minibatch_events.append(
                                 (minibatch_start_event, minibatch_end_event)
@@ -803,9 +803,7 @@ class PyTorchTrainer(BaseTrainer):
                                 gathered_minibatch_times, local_minibatch_times
                             )
                             minibatch_times = torch.stack(gathered_minibatch_times)
-                            minibatch_times = torch.max(
-                                minibatch_times, dim=0
-                            ).values
+                            minibatch_times = torch.max(minibatch_times, dim=0).values
                         else:
                             minibatch_times = local_minibatch_times
                         minibatch_time_s = statistics.median(
@@ -909,6 +907,9 @@ class PyTorchTrainer(BaseTrainer):
                         "Invalid value (NaN) encountered in dice score computation"
                     )
 
+        completed_epochs = epoch - 1
         if epoch_minibatch_times_s:
-            self._publish_fom(statistics.median(epoch_minibatch_times_s))
-        adiak_value("final_epochs", epoch)
+            self._publish_fom(
+                statistics.median(epoch_minibatch_times_s), completed_epochs
+            )
+        adiak_value("final_epochs", completed_epochs)
