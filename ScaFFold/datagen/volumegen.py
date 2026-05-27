@@ -179,20 +179,24 @@ def generate_volume_shard(
     different shard layouts.
     """
 
-    n_fracts_per_vol = config.n_fracts_per_vol
-    num_shards, shard_dims = _physical_sharding(config)
-    shard_indices = shard_id_to_indices(shard_id, num_shards)
-    slices = spatial_slices(
-        (config.vol_size, config.vol_size, config.vol_size),
-        shard_dims,
-        num_shards,
-        shard_indices,
+    voxelized_fractals = _voxelized_fractals_for_volume(
+        config,
+        curr_vol,
+        fractal_colors,
+        point_cloud_loader=point_cloud_loader,
     )
-    local_shape = _local_shape(slices)
+    return _render_volume_shard(config, voxelized_fractals, shard_id)
 
-    volume = np.full((3, *local_shape), 0, dtype=VOLUME_DTYPE)
-    mask = np.full(local_shape, 0, dtype=MASK_DTYPE)
+
+def _voxelized_fractals_for_volume(
+    config,
+    curr_vol: np.ndarray,
+    fractal_colors: np.ndarray,
+    point_cloud_loader: Callable[[str], np.ndarray] = load_np_ptcloud,
+):
+    n_fracts_per_vol = config.n_fracts_per_vol
     grid_size = math.floor(config.vol_size * config.scale)
+    voxelized_fractals = []
 
     for curr_fract in range(n_fracts_per_vol):
         curr_category = int(curr_vol[1 + 2 * curr_fract])
@@ -209,6 +213,26 @@ def generate_volume_shard(
 
         points = point_cloud_loader(point_cloud_path)
         idx = points_to_voxel_indices(points, grid_size)
+        voxelized_fractals.append((curr_category, fractal_color, idx))
+
+    return voxelized_fractals
+
+
+def _render_volume_shard(config, voxelized_fractals, shard_id: int):
+    num_shards, shard_dims = _physical_sharding(config)
+    shard_indices = shard_id_to_indices(shard_id, num_shards)
+    slices = spatial_slices(
+        (config.vol_size, config.vol_size, config.vol_size),
+        shard_dims,
+        num_shards,
+        shard_indices,
+    )
+    local_shape = _local_shape(slices)
+
+    volume = np.full((3, *local_shape), 0, dtype=VOLUME_DTYPE)
+    mask = np.full(local_shape, 0, dtype=MASK_DTYPE)
+
+    for curr_category, fractal_color, idx in voxelized_fractals:
         keep = np.ones(idx.shape[0], dtype=bool)
         for axis, axis_slice in enumerate(slices):
             keep &= idx[:, axis] >= axis_slice.start
@@ -283,7 +307,7 @@ def main(config: Dict):
     val_indices = _validation_indices(num_volumes, config)
 
     # Work distribution
-    total_tasks = num_volumes * n_total_shards
+    total_tasks = num_volumes
     stride = ceil(total_tasks / size)
     start_idx = rank * stride
     end_idx = min(((rank + 1) * stride), total_tasks)
@@ -291,60 +315,70 @@ def main(config: Dict):
     generation_err = ""
     try:
         if start_idx >= end_idx:
-            logging.info(f"Rank {rank} given no volume shards to generate")
+            logging.info(f"Rank {rank} given no logical volumes to generate")
 
         else:
-            task_ids = range(start_idx, end_idx)
+            volume_ids = range(start_idx, end_idx)
             print(
-                f"rank {rank} responsible for volume-shard tasks {start_idx} through {end_idx - 1}"
+                f"rank {rank} responsible for logical volume tasks "
+                f"{start_idx} through {end_idx - 1}"
             )
 
             fractal_colors = _fractal_colors(config, n_fracts_per_vol)
 
             # Generation loop
             start_time = time.time()
-            for i, task_id in enumerate(task_ids):
+            n_generated_shards = 0
+            for i, volume_idx in enumerate(volume_ids):
                 if i % 10 == 0:
-                    logging.info(
-                        f"Rank {rank} processing local volume-shard task {i}..."
-                    )
+                    logging.info(f"Rank {rank} processing local volume task {i}...")
 
-                volume_idx = task_id // n_total_shards
-                shard_id = task_id % n_total_shards
                 curr_vol = volumes_contents[volume_idx]
                 global_vol_idx = curr_vol[0]
                 vol_seed = config.seed + int(global_vol_idx)
                 random.seed(vol_seed)
                 np.random.seed(vol_seed)
 
-                volume_to_save, mask_to_save = generate_volume_shard(
+                voxelized_fractals = _voxelized_fractals_for_volume(
                     config,
                     curr_vol,
-                    shard_id,
                     fractal_colors,
                 )
 
-                # Determine destination folder
-                subdir = "validation" if global_vol_idx in val_indices else "training"
-                shard_suffix = shard_file_suffix(shard_id)
+                for shard_id in range(n_total_shards):
+                    volume_to_save, mask_to_save = _render_volume_shard(
+                        config,
+                        voxelized_fractals,
+                        shard_id,
+                    )
 
-                vol_file = os.path.join(
-                    vol_path, subdir, f"{global_vol_idx}{shard_suffix}.npy"
-                )
-                with open(vol_file, "wb") as f:
-                    np.save(f, volume_to_save)
+                    # Determine destination folder
+                    subdir = (
+                        "validation" if global_vol_idx in val_indices else "training"
+                    )
+                    shard_suffix = shard_file_suffix(shard_id)
 
-                mask_file = os.path.join(
-                    mask_path, subdir, f"{global_vol_idx}{shard_suffix}_mask.npy"
-                )
-                with open(mask_file, "wb") as f:
-                    np.save(f, mask_to_save)
+                    vol_file = os.path.join(
+                        vol_path, subdir, f"{global_vol_idx}{shard_suffix}.npy"
+                    )
+                    with open(vol_file, "wb") as f:
+                        np.save(f, volume_to_save)
+
+                    mask_file = os.path.join(
+                        mask_path, subdir, f"{global_vol_idx}{shard_suffix}_mask.npy"
+                    )
+                    with open(mask_file, "wb") as f:
+                        np.save(f, mask_to_save)
+                    n_generated_shards += 1
 
             end_time = time.time()
             total_time = end_time - start_time
             if rank == 0:
+                shard_rate = n_generated_shards / total_time
                 print(
-                    f"Rank 0 generated {end_idx - start_idx} volume shards in {total_time:.2f} seconds | {(end_idx - start_idx) / total_time:.2f} shards per second"
+                    f"Rank 0 generated {n_generated_shards} volume shards "
+                    f"from {end_idx - start_idx} logical volumes in "
+                    f"{total_time:.2f} seconds | {shard_rate:.2f} shards per second"
                 )
     except Exception as e:
         generation_err = (
