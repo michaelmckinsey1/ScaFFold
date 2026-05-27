@@ -21,7 +21,7 @@ import subprocess
 import time
 from argparse import Namespace
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 from mpi4py import MPI
@@ -29,8 +29,9 @@ from mpi4py import MPI
 from ScaFFold.datagen import volumegen
 
 META_FILENAME = "meta.yaml"
-DATASET_FORMAT_VERSION = 2
-INCLUDE_KEYS = [
+DATASET_FORMAT_VERSION = 3
+V2_DATASET_FORMAT_VERSION = 2
+V2_INCLUDE_KEYS = [
     "dataset_format_version",
     "n_categories",
     "n_instances_used_per_fractal",
@@ -39,6 +40,10 @@ INCLUDE_KEYS = [
     "variance_threshold",
     "n_fracts_per_vol",
     "val_split",
+]
+INCLUDE_KEYS = V2_INCLUDE_KEYS + [
+    "dc_num_shards",
+    "dc_shard_dims",
 ]
 
 
@@ -76,6 +81,26 @@ def _hash_volume_config(volume_config: Dict[str, Any]) -> str:
     return hashlib.sha256(s).hexdigest()[:12]
 
 
+def _volume_config_for_version(config_dict, dataset_format_version):
+    versioned_config = config_dict.copy()
+    versioned_config["dataset_format_version"] = dataset_format_version
+    if dataset_format_version == DATASET_FORMAT_VERSION:
+        include_keys = INCLUDE_KEYS
+    else:
+        include_keys = V2_INCLUDE_KEYS
+    return _get_required_keys_dict(
+        config=versioned_config,
+        include_keys=include_keys,
+    )
+
+
+def _requested_unsharded_layout(config_dict: Dict[str, Any]) -> bool:
+    total_shards = 1
+    for value in config_dict["dc_num_shards"]:
+        total_shards *= int(value)
+    return total_shards == 1
+
+
 def _git_commit_short() -> str:
     try:
         return (
@@ -98,6 +123,36 @@ def _git_commit_short() -> str:
         return "no-commit-id"
 
 
+def _find_reusable_dataset(
+    root: Path,
+    config_id: str,
+    dataset_format_version: int,
+    commit: str,
+    require_commit: bool,
+) -> Optional[Path]:
+    base = root / config_id
+    if not base.exists():
+        return None
+
+    candidates = sorted(
+        (p for p in base.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True
+    )
+    for dataset_path in candidates:
+        meta_path = dataset_path / META_FILENAME
+        if not meta_path.exists():
+            continue
+        meta = yaml.safe_load(meta_path.read_text()) or {}
+        if meta.get("config_id") != config_id:
+            continue
+        if meta.get("dataset_format_version", 1) != dataset_format_version:
+            continue
+        if require_commit and meta.get("code_commit") != commit:
+            continue
+        return dataset_path
+
+    return None
+
+
 def get_dataset(
     config: Namespace,
     require_commit: bool = False,  # default: ignore commit mismatches for reuse
@@ -118,38 +173,48 @@ def get_dataset(
     root = Path(config.dataset_dir)
     root.mkdir(exist_ok=True)
 
-    # Get dict of required keys and compute config_id
+    # V3 is the current physical-shard format. The physical dataset layout is
+    # defined by dc_num_shards/dc_shard_dims, matching the DistConv layout.
     config_dict = vars(config).copy()
-    config_dict["dataset_format_version"] = DATASET_FORMAT_VERSION
-    volume_config = _get_required_keys_dict(
-        config=config_dict, include_keys=INCLUDE_KEYS
-    )
+    volume_config = _volume_config_for_version(config_dict, DATASET_FORMAT_VERSION)
     config_id = _hash_volume_config(volume_config)
+    v2_volume_config = _volume_config_for_version(config_dict, V2_DATASET_FORMAT_VERSION)
+    v2_config_id = _hash_volume_config(v2_volume_config)
     commit = _git_commit_short()
 
     base = root / config_id
     base.mkdir(parents=True, exist_ok=True)
 
-    # Try to reuse latest candidate dataset
-    candidates = sorted(
-        (p for p in base.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True
+    # Prefer a matching V3 physical-shard dataset.
+    dataset_path = _find_reusable_dataset(
+        root,
+        config_id,
+        DATASET_FORMAT_VERSION,
+        commit,
+        require_commit,
     )
-    for dataset_path in candidates:
-        meta_path = dataset_path / META_FILENAME
-        if not meta_path.exists():
-            continue
-        meta = yaml.safe_load(meta_path.read_text())
-        if meta.get("config_id") != config_id:
-            continue
-        if meta.get("dataset_format_version", 1) != DATASET_FORMAT_VERSION:
-            continue
-        if require_commit and meta.get("code_commit") != commit:
-            continue
-        # If we pass the above checks, this dataset can be reused
+    if dataset_path is not None:
         print(
-            "Valid existing dataset found. Reusing this dataset..."
+            "Valid existing v3 sharded dataset found. Reusing this dataset..."
         )  # FIXME replace with updated logging
         return dataset_path
+
+    # V2 datasets are full-volume files without shard suffixes. Reuse them only
+    # for unsharded requests so sharded generation never silently returns a
+    # cache that lacks the requested shard files.
+    if _requested_unsharded_layout(config_dict):
+        dataset_path = _find_reusable_dataset(
+            root,
+            v2_config_id,
+            V2_DATASET_FORMAT_VERSION,
+            commit,
+            require_commit,
+        )
+        if dataset_path is not None:
+            print(
+                "Valid existing v2 full-volume dataset found. Reusing this dataset..."
+            )  # FIXME replace with updated logging
+            return dataset_path
 
     # Otherwise, generate a new dataset
     print(f"No valid existing dataset found at {base}. Generating new dataset...")
@@ -176,33 +241,52 @@ def get_dataset(
 
     # Check that all ranks succeeded in volumegen, then sync
     all_ok = comm.allreduce(1 if ok else 0, op=MPI.MIN) == 1
-    comm.Barrier()
+    errs = comm.gather(err, root=0)
 
-    # rank 0 has file write + move
+    failure_msg = None
     if rank == 0:
         if not all_ok:
             try:
                 shutil.rmtree(tmp, ignore_errors=True)
             except Exception:
                 pass
-            # collect & raise a representative error
-            errs = comm.gather(err, root=0)
             msgs = "; ".join(e for e in errs if e)
-            raise RuntimeError(f"dataset generation failed: {msgs or 'unknown error'}")
+            failure_msg = f"dataset generation failed: {msgs or 'unknown error'}"
 
-        # Write to tmp, then move, so readers never see half-written dataset
-        meta = {
-            "config_id": config_id,
-            "dataset_format_version": DATASET_FORMAT_VERSION,
-            "config_subset": volume_config,
-            "include_keys": INCLUDE_KEYS,
-            "code_commit": commit,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-        (tmp / META_FILENAME).write_text(
-            yaml.safe_dump(meta, sort_keys=True, default_flow_style=False)
-        )
-        tmp.rename(dest)
+    failure_msg = comm.bcast(failure_msg, root=0)
+    if failure_msg:
+        raise RuntimeError(failure_msg)
+
+    # rank 0 has file write + move
+    finalize_err = ""
+    if rank == 0:
+        try:
+            # Write to tmp, then move, so readers never see half-written dataset
+            meta = {
+                "config_id": config_id,
+                "dataset_format_version": DATASET_FORMAT_VERSION,
+                "config_subset": volume_config,
+                "include_keys": INCLUDE_KEYS,
+                "code_commit": commit,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            (tmp / META_FILENAME).write_text(
+                yaml.safe_dump(meta, sort_keys=True, default_flow_style=False)
+            )
+            tmp.rename(dest)
+        except Exception as e:
+            finalize_err = (
+                f"dataset finalization failed: rank 0: {type(e).__name__}: {e}"
+            )
+
+    finalize_err = comm.bcast(finalize_err, root=0)
+    if finalize_err:
+        if rank == 0:
+            try:
+                shutil.rmtree(tmp, ignore_errors=True)
+            except Exception:
+                pass
+        raise RuntimeError(finalize_err)
 
     # ensure the rename is visible everywhere before returning
     comm.Barrier()

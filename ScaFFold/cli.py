@@ -183,6 +183,12 @@ def main():
         help="DistConv param: number of shards to divide the tensor into. It's best to choose the fewest ranks needed to fit one sample in GPU memory, since that keeps communication at a minimum",
     )
     benchmark_parser.add_argument(
+        "--dc-shard-dims",
+        type=int,
+        nargs=3,
+        help="DistConv param: dimensions on which to shard.",
+    )
+    benchmark_parser.add_argument(
         "--epochs",
         type=int,
         help="Number of training epochs.",
