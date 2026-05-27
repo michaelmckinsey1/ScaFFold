@@ -220,6 +220,7 @@ def main(kwargs_dict: dict = {}):
         trainer.ddp_placements = [Shard(0)] + [Replicate()] * num_spatial_dims
         total_shards = math.prod(config.dc_num_shards)
         global_batch_size = config.batch_size * (world_size // total_shards)
+        config.global_batch_size = global_batch_size
         ddp_ranks = world_size // total_shards
         adiak_value("global_batch_size", global_batch_size)
         adiak_value("ddp_ranks", ddp_ranks)
