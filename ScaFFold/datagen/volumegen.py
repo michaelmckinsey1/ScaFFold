@@ -85,54 +85,6 @@ def points_to_voxel_indices(
     return idx
 
 
-def _build_volumes_contents(config, n_fracts_per_vol):
-    # Force n_instances_used_per_fractal to be multiple of n_fracts_per_vol
-    if config.n_instances_used_per_fractal % n_fracts_per_vol != 0:
-        print(
-            f"volumegen.py: WARNING: n_instances_used_per_fractal ({config.n_instances_used_per_fractal}) \n"
-            f"NOT multiple of n_fracts_per_vol={n_fracts_per_vol}. Rounding down."
-        )
-        config.n_instances_used_per_fractal = (
-            config.n_instances_used_per_fractal
-            // n_fracts_per_vol
-            * n_fracts_per_vol
-        )
-
-    # Randomly select n_instances_used_per_fractal instances from each fractal class.
-    instances_list = []
-    for category in range(config.n_categories):
-        instances_remaining = config.n_instances_used_per_fractal
-        random_instances = []
-        while instances_remaining > 0:
-            random_instances.extend(
-                random.sample(range(145), min(145, instances_remaining))
-            )
-            instances_remaining -= min(145, instances_remaining)
-
-        category_instance_pairs = [[category, instance] for instance in random_instances]
-        instances_list.extend(category_instance_pairs)
-
-    instances_list = np.array(instances_list, dtype=int)
-    np.random.shuffle(instances_list)
-
-    volumes_contents = instances_list.reshape(-1, 2 * n_fracts_per_vol)
-
-    indices = np.arange(volumes_contents.shape[0]).reshape(-1, 1)
-    return np.hstack([indices, volumes_contents])
-
-
-def _validation_indices(num_volumes: int, config) -> set[int]:
-    random.seed(config.seed)
-    return set(
-        random.sample(range(num_volumes), int(num_volumes * config.val_split / 100))
-    )
-
-
-def _fractal_colors(config, n_fracts_per_vol):
-    np.random.seed(config.seed)
-    return np.random.rand(max(config.n_categories, n_fracts_per_vol), 3)
-
-
 def _point_cloud_path(config, curr_category: int, curr_instance: int) -> str:
     instances_dir = f"var{config.variance_threshold}/instances/np{config.point_num}"
     return os.path.join(
@@ -162,30 +114,6 @@ def _validate_generation_config(config):
         )
 
     return num_shards, shard_dims, n_total_shards, grid_size
-
-
-def generate_volume_shard(
-    config,
-    curr_vol: np.ndarray,
-    shard_id: int,
-    fractal_colors: np.ndarray,
-    point_cloud_loader: Callable[[str], np.ndarray] = load_np_ptcloud,
-):
-    """
-    Generate one physical shard for one logical volume.
-
-    Voxel indices are computed in the full-volume coordinate system first, then
-    filtered to the shard. This preserves bitwise reconstruction across
-    different shard layouts.
-    """
-
-    voxelized_fractals = _voxelized_fractals_for_volume(
-        config,
-        curr_vol,
-        fractal_colors,
-        point_cloud_loader=point_cloud_loader,
-    )
-    return _render_volume_shard(config, voxelized_fractals, shard_id)
 
 
 def _voxelized_fractals_for_volume(
@@ -287,7 +215,41 @@ def main(config: Dict):
                 os.makedirs(os.path.join(vol_path, subdir), exist_ok=True)
                 os.makedirs(os.path.join(mask_path, subdir), exist_ok=True)
 
-            volumes_contents = _build_volumes_contents(config, n_fracts_per_vol)
+            # Force n_instances_used_per_fractal to be multiple of n_fracts_per_vol
+            if config.n_instances_used_per_fractal % n_fracts_per_vol != 0:
+                print(
+                    f"volumegen.py: WARNING: n_instances_used_per_fractal ({config.n_instances_used_per_fractal}) \n"
+                    f"NOT multiple of n_fracts_per_vol={n_fracts_per_vol}. Rounding down."
+                )
+                config.n_instances_used_per_fractal = (
+                    config.n_instances_used_per_fractal
+                    // n_fracts_per_vol
+                    * n_fracts_per_vol
+                )
+
+            # Randomly select n_instances_used_per_fractal instances from each fractal class.
+            instances_list = []
+            for category in range(config.n_categories):
+                instances_remaining = config.n_instances_used_per_fractal
+                random_instances = []
+                while instances_remaining > 0:
+                    random_instances.extend(
+                        random.sample(range(145), min(145, instances_remaining))
+                    )
+                    instances_remaining -= min(145, instances_remaining)
+
+                category_instance_pairs = [
+                    [category, instance] for instance in random_instances
+                ]
+                instances_list.extend(category_instance_pairs)
+
+            instances_list = np.array(instances_list, dtype=int)
+            np.random.shuffle(instances_list)
+
+            volumes_contents = instances_list.reshape(-1, 2 * n_fracts_per_vol)
+
+            indices = np.arange(volumes_contents.shape[0]).reshape(-1, 1)
+            volumes_contents = np.hstack([indices, volumes_contents])
 
             with open(volumes_contents_path, "wb") as f:
                 np.savetxt(f, volumes_contents.astype(int), fmt="%i", delimiter=",")
@@ -304,7 +266,10 @@ def main(config: Dict):
 
     # Determine train/val split globally so all ranks know where to save
     num_volumes = len(volumes_contents)
-    val_indices = _validation_indices(num_volumes, config)
+    random.seed(config.seed)
+    val_indices = set(
+        random.sample(range(num_volumes), int(num_volumes * config.val_split / 100))
+    )
 
     # Work distribution
     total_tasks = num_volumes
@@ -324,7 +289,10 @@ def main(config: Dict):
                 f"{start_idx} through {end_idx - 1}"
             )
 
-            fractal_colors = _fractal_colors(config, n_fracts_per_vol)
+            np.random.seed(config.seed)
+            fractal_colors = np.random.rand(
+                max(config.n_categories, n_fracts_per_vol), 3
+            )
 
             # Generation loop
             start_time = time.time()

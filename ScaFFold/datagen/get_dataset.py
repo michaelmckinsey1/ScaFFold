@@ -215,9 +215,6 @@ def get_dataset(
     v2_config_id = _hash_volume_config(v2_volume_config)
     commit = _git_commit_short()
 
-    base = root / config_id
-    base.mkdir(parents=True, exist_ok=True)
-
     # Prefer a matching V3 physical-shard dataset.
     dataset_path = _find_reusable_dataset(
         root,
@@ -250,8 +247,10 @@ def get_dataset(
             return dataset_path
 
     # Otherwise, generate a new dataset
+    base = root / config_id
     print(f"No valid existing dataset found at {base}. Generating new dataset...")
     if rank == 0:
+        base.mkdir(parents=True, exist_ok=True)
         ts = time.strftime("%Y%m%d-%H%M%S")
         dest = base / f"{ts}__{commit}"
         tmp = base / f".tmp_{ts}"
