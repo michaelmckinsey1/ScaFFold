@@ -86,6 +86,8 @@ def points_to_voxel_indices(
 
 
 def _point_cloud_path(config, curr_category: int, curr_instance: int) -> str:
+    """Return the input point-cloud path for a fractal instance."""
+
     instances_dir = f"var{config.variance_threshold}/instances/np{config.point_num}"
     return os.path.join(
         str(config.fract_base_dir),
@@ -96,14 +98,20 @@ def _point_cloud_path(config, curr_category: int, curr_instance: int) -> str:
 
 
 def _local_shape(slices):
+    """Return the local spatial shape described by shard slices."""
+
     return tuple(s.stop - s.start for s in slices)
 
 
 def _physical_sharding(config):
+    """Return normalized physical sharding from the generation config."""
+
     return normalize_sharding(config.dc_num_shards, config.dc_shard_dims)
 
 
 def _validate_generation_config(config):
+    """Validate sharded generation settings and return normalized layout data."""
+
     num_shards, shard_dims = _physical_sharding(config)
     n_total_shards = total_shards(num_shards)
 
@@ -122,6 +130,8 @@ def _voxelized_fractals_for_volume(
     fractal_colors: np.ndarray,
     point_cloud_loader: Callable[[str], np.ndarray] = load_np_ptcloud,
 ):
+    """Load and voxelize all fractals needed for one logical volume."""
+
     n_fracts_per_vol = config.n_fracts_per_vol
     grid_size = math.floor(config.vol_size * config.scale)
     voxelized_fractals = []
@@ -147,6 +157,8 @@ def _voxelized_fractals_for_volume(
 
 
 def _render_volume_shard(config, voxelized_fractals, shard_id: int):
+    """Render one physical shard from precomputed global voxel indices."""
+
     num_shards, shard_dims = _physical_sharding(config)
     shard_indices = shard_id_to_indices(shard_id, num_shards)
     slices = spatial_slices(

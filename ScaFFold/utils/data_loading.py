@@ -165,6 +165,8 @@ class BasicDataset(Dataset):
         return np.load(path, allow_pickle=False, mmap_mode=mmap_mode)
 
     def _list_ids(self, images_dir):
+        """List logical sample IDs visible to this dataset instance."""
+
         if not self.physical_shards:
             return sorted(
                 [
@@ -185,6 +187,8 @@ class BasicDataset(Dataset):
         return sorted(ids)
 
     def _load_dataset_metadata(self):
+        """Load dataset metadata, falling back to legacy defaults."""
+
         meta_path = self.dataset_root / META_FILENAME
         if not meta_path.exists():
             return {"dataset_format_version": LEGACY_DATASET_FORMAT_VERSION}
@@ -199,6 +203,8 @@ class BasicDataset(Dataset):
             return {"dataset_format_version": LEGACY_DATASET_FORMAT_VERSION}
 
     def _load_physical_sharding(self):
+        """Load and normalize the physical shard layout from metadata."""
+
         if not self.physical_shards:
             return (), ()
 
@@ -215,9 +221,13 @@ class BasicDataset(Dataset):
 
     @staticmethod
     def _layout_by_dim(num_shards, shard_dims):
+        """Map each sharded dimension to its shard count."""
+
         return {int(dim): int(num) for num, dim in zip(num_shards, shard_dims)}
 
     def _physical_layout_matches_spatial_spec(self):
+        """Return whether dataset shards match the requested spatial layout."""
+
         if self.spatial_shard_spec is None:
             return False
         return self._layout_by_dim(
@@ -228,6 +238,8 @@ class BasicDataset(Dataset):
         )
 
     def _physical_shard_id_for_spatial_spec(self):
+        """Return the physical shard id selected by the spatial shard spec."""
+
         spec_indices_by_dim = {
             int(dim): int(index)
             for dim, index in zip(
@@ -241,6 +253,8 @@ class BasicDataset(Dataset):
         return shard_indices_to_id(shard_indices, self.physical_num_shards)
 
     def _select_physical_shard_id(self):
+        """Select the physical shard file this dataset instance should read."""
+
         if not self.physical_shards:
             return 0
         if self.spatial_shard_spec is None:
@@ -310,6 +324,8 @@ class BasicDataset(Dataset):
         return self.spatial_shard_spec.slice_array(mask, axis_map, "mask")
 
     def _resolve_sample_files(self, name):
+        """Resolve image and mask file paths for a logical sample ID."""
+
         if self.physical_shards:
             img_file = self.images_dir / f"{name}{self.shard_suffix}.npy"
             mask_file = (

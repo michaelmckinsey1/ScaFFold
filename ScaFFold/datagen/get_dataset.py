@@ -104,6 +104,8 @@ def _hash_volume_config(volume_config: Dict[str, Any]) -> str:
 def _volume_config_for_version(
     config_dict, dataset_format_version, canonicalize_v3_shard_layout=True
 ):
+    """Build the hashable dataset config subset for a format version."""
+
     versioned_config = config_dict.copy()
     versioned_config["dataset_format_version"] = dataset_format_version
     if dataset_format_version == DATASET_FORMAT_VERSION:
@@ -123,6 +125,8 @@ def _volume_config_for_version(
 
 
 def _requested_unsharded_layout(config_dict: Dict[str, Any]) -> bool:
+    """Return whether the requested layout has exactly one physical shard."""
+
     total_shards = 1
     for value in config_dict["dc_num_shards"]:
         total_shards *= int(value)
@@ -158,6 +162,8 @@ def _find_reusable_dataset(
     commit: str,
     require_commit: bool,
 ) -> Optional[Path]:
+    """Find the newest reusable dataset matching format, config, and commit."""
+
     base = root / config_id
     if not base.exists():
         return None
