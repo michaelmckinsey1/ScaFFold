@@ -776,6 +776,13 @@ class PyTorchTrainer(BaseTrainer):
                         self.global_step += 1
                         # Stay on GPU
                         epoch_loss += loss.detach()
+                        if time_minibatch:
+                            # This sync has some potential performance impact
+                            # TODO: Would be better to measure this with Caliper, which uses CUDA events.
+                            torch.cuda.synchronize(self.device)
+                            minibatch_time_s = (
+                                time.perf_counter() - minibatch_start_time
+                            )
                         end_code_region("update_loss")
 
                         begin_code_region("record_minibatch_time")
