@@ -282,6 +282,19 @@ def main(kwargs_dict: dict = {}):
     outfile_path = trainer.outfile_path
     train_data = np.genfromtxt(outfile_path, dtype=float, delimiter=",", names=True)
     total_train_time = train_data["epoch_duration"].sum()
+    if total_train_time > 0:
+        fom = 1.0 / total_train_time
+        adiak_value("FOM", fom)
+        if rank == 0:
+            log.info(
+                f"FOM = {fom:.6f} (1 / total_train_time={total_train_time:.6f} seconds). "
+                f"This FOM is specific to problem_scale={config.problem_scale}, "
+                f"target_dice={config.target_dice}, seed={config.seed}."
+            )
+    else:
+        log.warning(
+            f"Skipping FOM reporting: invalid total_train_time={total_train_time}"
+        )
     epochs = np.atleast_1d(train_data["epoch"])
     total_epochs = int(epochs[-1])
     if config.epochs == -1:
