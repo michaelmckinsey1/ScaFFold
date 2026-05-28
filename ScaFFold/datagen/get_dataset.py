@@ -76,22 +76,50 @@ def _get_required_keys_dict(
     return canonicalize(required)
 
 
+def _canonicalize_v3_shard_layout(volume_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize shard layout ordering so equivalent v3 layouts share cache IDs."""
+
+    canonical_config = volume_config.copy()
+    num_shards = canonical_config["dc_num_shards"]
+    shard_dims = canonical_config["dc_shard_dims"]
+    if len(num_shards) != len(shard_dims):
+        raise ValueError(
+            f"dc_num_shards {num_shards} must have same length as dc_shard_dims {shard_dims}"
+        )
+
+    shard_layout = sorted(
+        (int(shard_dim), int(num_shard))
+        for num_shard, shard_dim in zip(num_shards, shard_dims)
+    )
+    canonical_config["dc_shard_dims"] = [shard_dim for shard_dim, _ in shard_layout]
+    canonical_config["dc_num_shards"] = [num_shard for _, num_shard in shard_layout]
+    return canonical_config
+
+
 def _hash_volume_config(volume_config: Dict[str, Any]) -> str:
     s = json.dumps(volume_config, separators=(",", ":"), sort_keys=True).encode()
     return hashlib.sha256(s).hexdigest()[:12]
 
 
-def _volume_config_for_version(config_dict, dataset_format_version):
+def _volume_config_for_version(
+    config_dict, dataset_format_version, canonicalize_v3_shard_layout=True
+):
     versioned_config = config_dict.copy()
     versioned_config["dataset_format_version"] = dataset_format_version
     if dataset_format_version == DATASET_FORMAT_VERSION:
         include_keys = INCLUDE_KEYS
     else:
         include_keys = V2_INCLUDE_KEYS
-    return _get_required_keys_dict(
+    volume_config = _get_required_keys_dict(
         config=versioned_config,
         include_keys=include_keys,
     )
+    if (
+        dataset_format_version == DATASET_FORMAT_VERSION
+        and canonicalize_v3_shard_layout
+    ):
+        volume_config = _canonicalize_v3_shard_layout(volume_config)
+    return volume_config
 
 
 def _requested_unsharded_layout(config_dict: Dict[str, Any]) -> bool:
@@ -177,6 +205,11 @@ def get_dataset(
     # defined by dc_num_shards/dc_shard_dims, matching the DistConv layout.
     config_dict = vars(config).copy()
     volume_config = _volume_config_for_version(config_dict, DATASET_FORMAT_VERSION)
+    metadata_volume_config = _volume_config_for_version(
+        config_dict,
+        DATASET_FORMAT_VERSION,
+        canonicalize_v3_shard_layout=False,
+    )
     config_id = _hash_volume_config(volume_config)
     v2_volume_config = _volume_config_for_version(config_dict, V2_DATASET_FORMAT_VERSION)
     v2_config_id = _hash_volume_config(v2_volume_config)
@@ -265,7 +298,7 @@ def get_dataset(
             meta = {
                 "config_id": config_id,
                 "dataset_format_version": DATASET_FORMAT_VERSION,
-                "config_subset": volume_config,
+                "config_subset": metadata_volume_config,
                 "include_keys": INCLUDE_KEYS,
                 "code_commit": commit,
                 "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
