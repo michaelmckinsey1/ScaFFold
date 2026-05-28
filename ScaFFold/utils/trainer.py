@@ -268,19 +268,6 @@ class BaseTrainer:
             return self.config.starting_learning_rate
         return self.optimizer.param_groups[0]["lr"]
 
-    def _publish_minibatch_time(self, minibatch_time_s):
-        """Publish representative full minibatch time."""
-        if minibatch_time_s <= 0:
-            self.log.warning(
-                f"Skipping minibatch timing reporting: invalid minibatch_time_s={minibatch_time_s}"
-            )
-            return
-        adiak_value("minibatch_time_s", minibatch_time_s)
-        if self.world_rank == 0:
-            self.log.info(
-                f"Representative full batch minibatch_time_s={minibatch_time_s:.6f}"
-            )
-
 
 class PyTorchTrainer(BaseTrainer):
     """
@@ -895,5 +882,10 @@ class PyTorchTrainer(BaseTrainer):
 
         completed_epochs = epoch - 1
         if epoch_minibatch_times_s:
-            self._publish_minibatch_time(statistics.median(epoch_minibatch_times_s))
+            minibatch_time_s = statistics.median(epoch_minibatch_times_s)
+            adiak_value("minibatch_time_s", minibatch_time_s)
+            if self.world_rank == 0:
+                self.log.info(
+                    f"Representative full batch minibatch_time_s={minibatch_time_s:.6f}"
+                )
         adiak_value("final_epochs", completed_epochs)
