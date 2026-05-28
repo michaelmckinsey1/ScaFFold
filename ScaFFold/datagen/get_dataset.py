@@ -211,7 +211,9 @@ def get_dataset(
         canonicalize_v3_shard_layout=False,
     )
     config_id = _hash_volume_config(volume_config)
-    v2_volume_config = _volume_config_for_version(config_dict, V2_DATASET_FORMAT_VERSION)
+    v2_volume_config = _volume_config_for_version(
+        config_dict, V2_DATASET_FORMAT_VERSION
+    )
     v2_config_id = _hash_volume_config(v2_volume_config)
     commit = _git_commit_short()
 

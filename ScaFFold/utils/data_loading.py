@@ -340,8 +340,7 @@ class BasicDataset(Dataset):
 
         mmap_mode = (
             "r"
-            if self.spatial_shard_spec is not None
-            and not self.physical_shards
+            if self.spatial_shard_spec is not None and not self.physical_shards
             else None
         )
         # Memmap lets each rank slice out just its local shard without eagerly
