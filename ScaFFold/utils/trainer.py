@@ -635,7 +635,6 @@ class PyTorchTrainer(BaseTrainer):
         epoch = self.start_epoch
         dice_score_train = 0
         epoch_minibatch_times_s = []
-        warned_no_full_minibatches = False
         with open(self.outfile_path, "a", newline="") as outfile:
             start = time.time()
             while dice_score_train < self.config.target_dice:
@@ -671,19 +670,12 @@ class PyTorchTrainer(BaseTrainer):
                     unit="img",
                     disable=True if self.world_rank != 0 else False,
                 ) as pbar:
-                    full_train_batches = (
-                        len(self.train_sampler) // self.config.batch_size
-                    )
-                    time_minibatches = full_train_batches > 0
-                    if full_train_batches == 0 and not warned_no_full_minibatches:
-                        self.log.warning(
-                            "Skipping minibatch timing reporting: no full training minibatches"
-                        )
-                        warned_no_full_minibatches = True
                     begin_code_region("batch_loop")
                     for batch_idx, batch in enumerate(self.train_loader):
+                        # We don't want to time partial batches, i.e. last batch (time will be lower than expected).
                         time_minibatch = (
-                            time_minibatches and batch_idx < full_train_batches
+                            batch_idx
+                            < len(self.train_sampler) // self.config.batch_size
                         )
                         if time_minibatch:
                             minibatch_start_event = torch.cuda.Event(enable_timing=True)
@@ -692,6 +684,7 @@ class PyTorchTrainer(BaseTrainer):
                             minibatch_events.append(
                                 (minibatch_start_event, minibatch_end_event)
                             )
+                        begin_code_region("minibatch_time")
                         begin_code_region("run_training_batch")
                         batch_size, batch_loss, batch_dice_score = (
                             self._run_training_batch(
@@ -709,6 +702,7 @@ class PyTorchTrainer(BaseTrainer):
                         # Stay on GPU
                         epoch_loss += batch_loss
                         end_code_region("update_loss")
+                        end_code_region("minibatch_time")
 
                         if time_minibatch:
                             minibatch_end_event.record()
@@ -784,13 +778,8 @@ class PyTorchTrainer(BaseTrainer):
                         + "\n"
                     )
                     outfile.flush()
-                    minibatch_time_msg = (
-                        f" Median full batch minibatch_time_s={minibatch_time_s:.6f}."
-                        if minibatch_time_s is not None
-                        else ""
-                    )
                     print(
-                        f"Epoch {epoch} completed in {epoch_duration} seconds. Total train time so far: {time.time() - start}.{minibatch_time_msg}"
+                        f"Epoch {epoch} completed in {epoch_duration} seconds. Total train time so far: {time.time() - start}. Median full batch minibatch_time_s={minibatch_time_s:.6f}."
                     )
 
                 #
