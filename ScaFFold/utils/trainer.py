@@ -708,13 +708,6 @@ class PyTorchTrainer(BaseTrainer):
                             minibatch_end_event.record()
                     end_code_region("batch_loop")
 
-                    # Sync for batch time happens once after epoch is already done (low overhead)
-                    if time_minibatch:
-                        minibatch_time_s = self._sync_gather_minibatch_timer(
-                            minibatch_events
-                        )
-                        epoch_minibatch_times_s.append(minibatch_time_s)
-
                 # Calculate overall loss as average of per-batch loss
                 overall_loss = epoch_loss.item() / len(self.train_loader)
 
@@ -753,6 +746,14 @@ class PyTorchTrainer(BaseTrainer):
 
                 epoch_end_time = time.time()
                 epoch_duration = epoch_end_time - epoch_start_time
+
+                # Sync for batch time happens once after epoch is already done (low overhead)
+                if len(minibatch_events) > 0:
+                    minibatch_time_s = self._sync_gather_minibatch_timer(
+                        minibatch_events
+                    )
+                    epoch_minibatch_times_s.append(minibatch_time_s)
+
                 #
                 # Write out data for this epoch to train stats csv
                 #
