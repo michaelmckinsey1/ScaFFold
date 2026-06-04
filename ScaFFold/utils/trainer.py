@@ -569,7 +569,7 @@ class PyTorchTrainer(BaseTrainer):
         Execute model training
         """
 
-        epoch = 1
+        epoch = self.start_epoch
         dice_score_train = 0
         epoch_minibatch_times_s = []
         warned_no_full_minibatches = False
