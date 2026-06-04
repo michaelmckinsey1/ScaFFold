@@ -555,8 +555,7 @@ class PyTorchTrainer(BaseTrainer):
         )
         if self.config.dist:
             gathered_minibatch_times = [
-                torch.empty_like(local_minibatch_times)
-                for _ in range(self.world_size)
+                torch.empty_like(local_minibatch_times) for _ in range(self.world_size)
             ]
             torch.distributed.all_gather(
                 gathered_minibatch_times, local_minibatch_times
@@ -565,9 +564,7 @@ class PyTorchTrainer(BaseTrainer):
             minibatch_times = torch.max(minibatch_times, dim=0).values
         else:
             minibatch_times = local_minibatch_times
-        minibatch_time_s = statistics.median(
-            minibatch_times.cpu().tolist()
-        )
+        minibatch_time_s = statistics.median(minibatch_times.cpu().tolist())
         return minibatch_time_s
 
     def warmup(self):
@@ -719,7 +716,9 @@ class PyTorchTrainer(BaseTrainer):
 
                     # Sync for batch time happens once after epoch is already done (low overhead)
                     if time_minibatch:
-                        minibatch_time_s = self._sync_gather_minibatch_timer(minibatch_events)
+                        minibatch_time_s = self._sync_gather_minibatch_timer(
+                            minibatch_events
+                        )
                         epoch_minibatch_times_s.append(minibatch_time_s)
 
                 # Calculate overall loss as average of per-batch loss
