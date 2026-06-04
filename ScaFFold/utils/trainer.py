@@ -719,7 +719,8 @@ class PyTorchTrainer(BaseTrainer):
 
                     # Sync for batch time happens once after epoch is already done (low overhead)
                     if time_minibatch:
-                        epoch_minibatch_times_s.append(self._sync_gather_minibatch_timer(minibatch_events))
+                        minibatch_time_s = self._sync_gather_minibatch_timer(minibatch_events)
+                        epoch_minibatch_times_s.append(minibatch_time_s)
 
                 # Calculate overall loss as average of per-batch loss
                 overall_loss = epoch_loss.item() / len(self.train_loader)
