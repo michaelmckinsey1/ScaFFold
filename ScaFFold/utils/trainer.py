@@ -780,7 +780,7 @@ class PyTorchTrainer(BaseTrainer):
                     )
                     outfile.flush()
                     print(
-                        f"Epoch {epoch} completed in {epoch_duration} seconds. Total train time so far: {time.time() - start}. Median full batch minibatch_time_s={minibatch_time_s:.6f}."
+                        f"Epoch {epoch} completed in {epoch_duration:.6f} seconds. Total train time so far: {time.time() - start:.6f} seconds. Median of minibatch times: {minibatch_time_s:.6f} seconds."
                     )
 
                 #
@@ -813,6 +813,6 @@ class PyTorchTrainer(BaseTrainer):
             adiak_value("minibatch_time_s", minibatch_time_s)
             if self.world_rank == 0:
                 self.log.info(
-                    f"Representative full batch minibatch_time_s={minibatch_time_s:.6f}"
+                    f"Median of epoch minibatch time medians: {minibatch_time_s:.6f} seconds."
                 )
         adiak_value("final_epochs", completed_epochs)
