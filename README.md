@@ -60,6 +60,12 @@ The model is trained from a random initialization until convergence, which is de
 1. Once fractal generation completes, run the benchmark:  
     `torchrun-hpc -N 1 -n 4 --gpus-per-proc 1 $(which scaffold) benchmark -c ScaFFold/configs/benchmark_default.yml`
 
+### Dataset cache and sharded datagen
+
+`benchmark` creates or reuses datasets under `dataset_dir`. New datasets are written in the v3 format, which stores one volume and mask file per logical sample per physical shard. The physical layout is controlled by `dc_num_shards` and `dc_shard_dims`; for example, `dc_num_shards: [1, 1, 2]` writes two physical shards per logical volume, with filenames such as `120_shard000000.npy` and `120_shard000001.npy`. Datasets are generated with the same sharding configuration used for model training.
+
+Unsharded runs use `dc_num_shards: [1, 1, 1]`. For those runs, ScaFFold can still reuse an existing v2 full-volume dataset cache. Sharded runs require a matching v3 cache or generate a new v3 dataset.
+
 `benchmark` creates a folder for the benchmark run(s) at `base_run_dir` set in the config file. For reproducibility, we store a copy of the benchmark run config yml. Within each run subfolder, `benchmark` creates a yml config for that specific run.
 
 After each run completes, statistics from the run are stored in `train_stats.csv`. Additionally, users can inspect plots of the training and validation losses over time in `<base_run_dir/figures`.
@@ -69,14 +75,18 @@ Parameters are set in a `.yml` config file and can be modified by the user:
 ```yml
 # External/user-facing
 base_run_dir: "benchmark_runs"     # Subfolder of $(pwd) in which to run jobs.
+dataset_dir: "datasets"            # Directory in which to store and query for datasets.
 fract_base_dir: "fractals"         # Base directory for fractal IFS and instances.
 n_categories: 5                    # Number of fractal categories present in the dataset.
 n_instances_used_per_fractal: 145  # Number of unique instances to pull from each fractal class. There are 145 unique; exceeding this number will reuse some instances.
 problem_scale: 6                   # Determines dataset resolution and number of unet layers. Default is 6.
 unet_bottleneck_dim: 3             # Power of 2 of the unet bottleneck layer dimension. Default of 3 -> bottleneck layer of size 8.
 seed: 42                           # Random seed.
-batch_size: 1                      # Batch sizes for each vol size.
+batch_size: 1                      # Batch size per rank.
+dataloader_num_workers: 1          # Number of DataLoader worker processes per rank.
 optimizer: "ADAM"                  # "ADAM" is preferred option, otherwise training defautls to RMSProp.
+dc_num_shards: [1, 1, 1]           # Physical data shards per sample for DistConv.
+dc_shard_dims: [2, 3, 4]           # Tensor dimensions used for physical sharding.
 
 # Internal/dev use only
 variance_threshold: 0.15           # Variance threshold for valid fractals. Default is 0.15.
@@ -97,6 +107,7 @@ framework: "torch"                 # The DL framework to train with. Only valid 
 checkpoint_dir: "checkpoints"      # Subfolder in which to save training checkpoints.
 checkpoint_interval: 1             # Number of epochs between saving training checkpoints.
 loss_freq: 1                       # Number of epochs between logging the overall loss.
+warmup_batches: 64                 # Training and validation warmup batches per DDP rank.
 ```
 
 ## How the benchmark works
@@ -193,6 +204,8 @@ For n  in n_volumes:
 
     3. Save volume and mask  to files
 ```
+
+In the current v3 dataset format, this save step writes each logical sample as one or more physical shard files, matching the requested `dc_num_shards` layout. The dataloader then reads only the shard file needed by the current DistConv rank instead of loading a full volume and slicing it locally.
 
 ### 1. Profiling with the PyTorch Profiler
 
