@@ -276,6 +276,16 @@ def main(config: Dict):
     if setup_err:
         raise RuntimeError(setup_err)
 
+    # Rank 0 creates shared metadata above; wait before local writer setup.
+    comm.Barrier()
+
+    for subdir in ["training", "validation"]:
+        os.makedirs(os.path.join(vol_path, subdir), exist_ok=True)
+        os.makedirs(os.path.join(mask_path, subdir), exist_ok=True)
+
+    # Wait until every rank has ensured the writer directories exist.
+    comm.Barrier()
+
     # Determine train/val split globally so all ranks know where to save
     num_volumes = len(volumes_contents)
     random.seed(config.seed)
