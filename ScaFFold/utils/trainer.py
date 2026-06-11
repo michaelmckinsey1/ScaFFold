@@ -693,7 +693,7 @@ class PyTorchTrainer(BaseTrainer):
                             )
                         )
                         train_dice_total += batch_dice_score
-                        begin_code_region("run_training_batch")
+                        end_code_region("run_training_batch")
 
                         # Update the loss
                         begin_code_region("update_loss")

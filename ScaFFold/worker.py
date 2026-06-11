@@ -279,37 +279,31 @@ def main(kwargs_dict: dict = {}):
     #
     # Calculate benchmark score
     #
-    outfile_path = trainer.outfile_path
-    train_data = np.genfromtxt(outfile_path, dtype=float, delimiter=",", names=True)
-    total_train_time = train_data["epoch_duration"].sum()
-    if total_train_time > 0:
+    if rank == 0:
+        outfile_path = trainer.outfile_path
+        train_data = np.genfromtxt(outfile_path, dtype=float, delimiter=",", names=True)
+        total_train_time = train_data["epoch_duration"].sum()
         fom = 1.0 / total_train_time
         adiak_value("FOM", fom)
-        if rank == 0:
-            log.info(
-                f"FOM = {fom} (1 / total_train_time={total_train_time:.6f} seconds). "
-                f"This FOM is specific to problem_scale={config.problem_scale}, "
-                f"target_dice={config.target_dice}, seed={config.seed}."
+        log.info(
+            f"FOM = {fom} (1 / total_train_time={total_train_time:.6f} seconds). "
+            f"This FOM is specific to problem_scale={config.problem_scale}, "
+            f"target_dice={config.target_dice}, seed={config.seed}."
+        )
+        epochs = np.atleast_1d(train_data["epoch"])
+        total_epochs = int(epochs[-1])
+        if config.epochs == -1:
+            extra_msg = f"Trained to >= {config.target_dice} validation dice score in {total_train_time:.2f} seconds, {total_epochs} epochs."
+        else:
+            extra_msg = (
+                f"Completed in {total_train_time:.2f} seconds, {total_epochs} epochs."
             )
-    else:
-        log.warning(
-            f"Skipping FOM reporting: invalid total_train_time={total_train_time}"
-        )
-    epochs = np.atleast_1d(train_data["epoch"])
-    total_epochs = int(epochs[-1])
-    if config.epochs == -1:
-        extra_msg = f"Trained to >= {config.target_dice} validation dice score in {total_train_time:.2f} seconds, {total_epochs} epochs."
-    else:
-        extra_msg = (
-            f"Completed in {total_train_time:.2f} seconds, {total_epochs} epochs."
+
+        log.info(
+            f"Benchmark run at scale {config.problem_scale} complete. \n{extra_msg}"
         )
 
-    log.info(f"Benchmark run at scale {config.problem_scale} complete. \n{extra_msg}")
-
-    #
-    # Generate plots
-    #
-    if rank == 0:
+        # Generate plots
         log.info("Generating figures on rank 0...")
         begin_code_region("generate_figures")
         standard_viz.main(config)
