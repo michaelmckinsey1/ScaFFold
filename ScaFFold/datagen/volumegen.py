@@ -293,21 +293,21 @@ def main(config: Dict):
         random.sample(range(num_volumes), int(num_volumes * config.val_split / 100))
     )
 
-    # Work distribution
-    total_tasks = num_volumes
+    # Work distribution: each task renders one physical shard of one logical volume.
+    total_tasks = num_volumes * n_total_shards
     stride = ceil(total_tasks / size)
     start_idx = rank * stride
     end_idx = min(((rank + 1) * stride), total_tasks)
 
     generation_err = ""
+    n_generated_shards = 0
     try:
         if start_idx >= end_idx:
-            logging.info(f"Rank {rank} given no logical volumes to generate")
+            logging.info(f"Rank {rank} given no physical shard tasks to generate")
 
         else:
-            volume_ids = range(start_idx, end_idx)
             print(
-                f"rank {rank} responsible for logical volume tasks "
+                f"rank {rank} responsible for physical shard tasks "
                 f"{start_idx} through {end_idx - 1}"
             )
 
@@ -318,48 +318,62 @@ def main(config: Dict):
 
             # Generation loop
             start_time = time.time()
-            n_generated_shards = 0
-            for i, volume_idx in enumerate(volume_ids):
+            cached_volume_idx = None
+            cached_global_vol_idx = None
+            cached_voxelized_fractals = None
+
+            for i, task_idx in enumerate(range(start_idx, end_idx)):
                 if i % 10 == 0:
-                    logging.info(f"Rank {rank} processing local volume task {i}...")
+                    logging.info(
+                        f"Rank {rank} processing local physical shard task {i}..."
+                    )
 
-                curr_vol = volumes_contents[volume_idx]
-                global_vol_idx = curr_vol[0]
-                vol_seed = config.seed + int(global_vol_idx)
-                random.seed(vol_seed)
-                np.random.seed(vol_seed)
+                volume_idx = task_idx // n_total_shards
+                shard_id = task_idx % n_total_shards
 
-                voxelized_fractals = _voxelized_fractals_for_volume(
+                if cached_volume_idx != volume_idx:
+                    curr_vol = volumes_contents[volume_idx]
+                    global_vol_idx = int(curr_vol[0])
+                    vol_seed = config.seed + global_vol_idx
+                    random.seed(vol_seed)
+                    np.random.seed(vol_seed)
+
+                    cached_voxelized_fractals = _voxelized_fractals_for_volume(
+                        config,
+                        curr_vol,
+                        fractal_colors,
+                    )
+                    cached_volume_idx = volume_idx
+                    cached_global_vol_idx = global_vol_idx
+
+                volume_to_save, mask_to_save = _render_volume_shard(
                     config,
-                    curr_vol,
-                    fractal_colors,
+                    cached_voxelized_fractals,
+                    shard_id,
                 )
 
-                for shard_id in range(n_total_shards):
-                    volume_to_save, mask_to_save = _render_volume_shard(
-                        config,
-                        voxelized_fractals,
-                        shard_id,
-                    )
+                # Determine destination folder
+                subdir = (
+                    "validation"
+                    if cached_global_vol_idx in val_indices
+                    else "training"
+                )
+                shard_suffix = shard_file_suffix(shard_id)
 
-                    # Determine destination folder
-                    subdir = (
-                        "validation" if global_vol_idx in val_indices else "training"
-                    )
-                    shard_suffix = shard_file_suffix(shard_id)
+                vol_file = os.path.join(
+                    vol_path, subdir, f"{cached_global_vol_idx}{shard_suffix}.npy"
+                )
+                with open(vol_file, "wb") as f:
+                    np.save(f, volume_to_save)
 
-                    vol_file = os.path.join(
-                        vol_path, subdir, f"{global_vol_idx}{shard_suffix}.npy"
-                    )
-                    with open(vol_file, "wb") as f:
-                        np.save(f, volume_to_save)
-
-                    mask_file = os.path.join(
-                        mask_path, subdir, f"{global_vol_idx}{shard_suffix}_mask.npy"
-                    )
-                    with open(mask_file, "wb") as f:
-                        np.save(f, mask_to_save)
-                    n_generated_shards += 1
+                mask_file = os.path.join(
+                    mask_path,
+                    subdir,
+                    f"{cached_global_vol_idx}{shard_suffix}_mask.npy",
+                )
+                with open(mask_file, "wb") as f:
+                    np.save(f, mask_to_save)
+                n_generated_shards += 1
 
             end_time = time.time()
             total_time = end_time - start_time
@@ -367,7 +381,7 @@ def main(config: Dict):
                 shard_rate = n_generated_shards / total_time
                 print(
                     f"Rank 0 generated {n_generated_shards} volume shards "
-                    f"from {end_idx - start_idx} logical volumes in "
+                    f"from {end_idx - start_idx} physical shard tasks in "
                     f"{total_time:.2f} seconds | {shard_rate:.2f} shards per second"
                 )
     except Exception as e:

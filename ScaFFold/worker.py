@@ -152,6 +152,13 @@ def main(kwargs_dict: dict = {}):
     )
     log.info(f"rank={rank}, world_size={world_size} test")
 
+    total_distconv_shards = math.prod(config.dc_num_shards)
+    if config.dist and world_size % total_distconv_shards != 0:
+        raise ValueError(
+            f"world_size={world_size} must be divisible by total number of "
+            f"distconv shards = {total_distconv_shards}"
+        )
+
     # Generate or retrieve dataset
     begin_code_region("get_dataset")
     dataset_dir = get_dataset(
@@ -179,8 +186,9 @@ def main(kwargs_dict: dict = {}):
     if config.dist:
         # DDP + DistConv setup
         # Ensure world_size is divisible by total distconv shards
-        assert dist.get_world_size() % math.prod(config.dc_num_shards) == 0, (
-            f"world_size={dist.get_world_size()} must be divisible by total number of distconv shards = {math.prod(config.dc_num_shards)}"
+        assert dist.get_world_size() % total_distconv_shards == 0, (
+            f"world_size={dist.get_world_size()} must be divisible by total number "
+            f"of distconv shards = {total_distconv_shards}"
         )
 
         ps = ParallelStrategy(
