@@ -287,7 +287,7 @@ def main(kwargs_dict: dict = {}):
         adiak_value("FOM", fom)
         if rank == 0:
             log.info(
-                f"FOM = {fom:.6f} (1 / total_train_time={total_train_time:.6f} seconds). "
+                f"FOM = {fom} (1 / total_train_time={total_train_time:.6f} seconds). "
                 f"This FOM is specific to problem_scale={config.problem_scale}, "
                 f"target_dice={config.target_dice}, seed={config.seed}."
             )
