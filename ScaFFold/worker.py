@@ -174,6 +174,7 @@ def main(kwargs_dict: dict = {}):
         n_classes=config.n_categories + 1,
         trilinear=False,
         layers=config.unet_layers,
+        group_norm_groups=config.group_norm_groups,
     )
     if config.dist:
         # DDP + DistConv setup
