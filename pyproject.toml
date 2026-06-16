@@ -43,7 +43,7 @@ authors = [
 ]
 license = { file = "LICENSE" }
 dependencies = [
-  "hpc-launcher>=1.0.4",
+  "hpc-launcher @ git+https://github.com/LBANN/HPC-launcher.git@bba5e32",
   "matplotlib>=3.9.4",
   "numpy>=1.26.4",
   "numba>=0.60.0",
