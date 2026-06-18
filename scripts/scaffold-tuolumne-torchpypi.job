@@ -15,11 +15,11 @@ export NCCL_NET_PLUGIN=/collab/usr/global/tools/rccl/toss_4_x86_64_ib_cray/rocm-
 
 # Disable direct convolution benchmarking (should speedup warmup by a significant amount, does the below three options together)
 export MIOPEN_DEBUG_CONV_DIRECT=0
-# # Disable direct naive convolution benchmarking (naive_conv_ab_nonpacked_fwd_ndhwc_half_double_half.kd)
+# Disable direct naive convolution benchmarking (naive_conv_ab_nonpacked_fwd_ndhwc_half_double_half.kd)
 # export MIOPEN_DEBUG_CONV_DIRECT_NAIVE_CONV_FWD=0
-# # Disable naive_conv_ab_nonpacked_bwd_ndhwc_half_double_half.kd
+# Disable naive_conv_ab_nonpacked_bwd_ndhwc_half_double_half.kd
 # export MIOPEN_DEBUG_CONV_DIRECT_NAIVE_CONV_BWD=0
-# # Disable naive_conv_ab_nonpacked_wrw_ndhwc_half_double_half.kd
+# Disable naive_conv_ab_nonpacked_wrw_ndhwc_half_double_half.kd
 # export MIOPEN_DEBUG_CONV_DIRECT_NAIVE_CONV_WRW=0
 
 CONFIG_PATH="$(pwd)/ScaFFold/configs/benchmark_default.yml"
