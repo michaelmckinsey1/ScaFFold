@@ -715,7 +715,7 @@ class PyTorchTrainer(BaseTrainer):
                 #
                 train_dice = float(train_dice_total.item() / len(self.train_loader))
                 self.log.info(
-                    f" epoch {epoch} | train_dice_score {train_dice:.6f} | val_dice_score {val_score:.6f} | lr {self._current_learning_rate():.8f}"
+                    f" epoch {epoch} | train_loss={overall_loss:.6f} | val_loss={val_loss_avg:.6f} | train_dice_score {train_dice:.6f} | val_dice_score {val_score:.6f} | lr {self._current_learning_rate():.8f}"
                 )
                 self.log.debug(f" writing to csv at {self.outfile_path}")
                 if self.world_rank == 0:
