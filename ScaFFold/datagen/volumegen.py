@@ -354,9 +354,7 @@ def main(config: Dict):
 
                 # Determine destination folder
                 subdir = (
-                    "validation"
-                    if cached_global_vol_idx in val_indices
-                    else "training"
+                    "validation" if cached_global_vol_idx in val_indices else "training"
                 )
                 shard_suffix = shard_file_suffix(shard_id)
 
