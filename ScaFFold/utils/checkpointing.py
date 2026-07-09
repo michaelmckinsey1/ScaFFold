@@ -145,7 +145,7 @@ class CheckpointManager:
         if self.optimizer:
             self.optimizer.zero_grad(set_to_none=True)
 
-    def load_from_checkpoint(self) -> int:
+    def load_from_checkpoint(self, require_checkpoint: bool = False) -> int:
         """Load the latest checkpoint. Returns start_epoch (default 1)."""
         self.wait_for_save()  # Safety: don't load while writing
 
@@ -159,6 +159,11 @@ class CheckpointManager:
 
         candidate = self._broadcast_obj(candidate)
         if not candidate:
+            if require_checkpoint:
+                raise FileNotFoundError(
+                    "Restart requested but no checkpoint was found. "
+                    f"Expected {self.last_ckpt_path} or {self.best_ckpt_path}."
+                )
             return 1
 
         self._log(f"Loading checkpoint from {candidate}")

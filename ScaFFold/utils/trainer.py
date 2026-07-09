@@ -318,7 +318,9 @@ class PyTorchTrainer(BaseTrainer):
             self.start_epoch = 1
         else:
             # Load checkpoint via manager
-            self.start_epoch = self.checkpoint_manager.load_from_checkpoint()
+            self.start_epoch = self.checkpoint_manager.load_from_checkpoint(
+                require_checkpoint=getattr(self.config, "restart", False)
+            )
 
             # Restore extra metadata if needed (e.g. mask values)
             if "train_mask_values" in self.checkpoint_manager.restored_extras:

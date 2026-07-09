@@ -302,6 +302,25 @@ def main():
 
     comm.Barrier()
     combined_config = comm.bcast(combined_config, root=0)
+
+    if combined_config.get("restart", False):
+        run_dir = combined_config.get("run_dir")
+        if not run_dir:
+            raise ValueError("--restart requires --run-dir")
+
+        checkpoint_dir = Path(run_dir) / combined_config.get(
+            "checkpoint_dir", "checkpoints"
+        )
+        expected_checkpoints = (
+            checkpoint_dir / "checkpoint_last.pth",
+            checkpoint_dir / "checkpoint_best.pth",
+        )
+        if not any(path.exists() for path in expected_checkpoints):
+            expected = " or ".join(str(path) for path in expected_checkpoints)
+            raise FileNotFoundError(
+                f"Restart requested but no checkpoint was found. Expected {expected}."
+            )
+
     if rank == 0:
         print(f"combined_config = {combined_config}")
 
