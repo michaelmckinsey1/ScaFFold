@@ -290,7 +290,9 @@ def main(kwargs_dict: dict = {}):
             optimizer_steps = np.atleast_1d(train_data["total_optimizer_steps"])
             total_optimizer_steps = int(optimizer_steps[-1])
         elif "optimizer_steps" in train_data.dtype.names:
-            total_optimizer_steps = int(np.atleast_1d(train_data["optimizer_steps"]).sum())
+            total_optimizer_steps = int(
+                np.atleast_1d(train_data["optimizer_steps"]).sum()
+            )
         else:
             total_optimizer_steps = int(getattr(trainer, "total_optimizer_steps", 0))
         adiak_value("total_optimizer_steps", total_optimizer_steps)
@@ -305,9 +307,7 @@ def main(kwargs_dict: dict = {}):
         if config.epochs == -1:
             extra_msg = f"Trained to >= {config.target_dice} validation dice score in {total_train_time:.2f} seconds, {total_epochs} epochs, {total_optimizer_steps} optimizer steps."
         else:
-            extra_msg = (
-                f"Completed in {total_train_time:.2f} seconds, {total_epochs} epochs, {total_optimizer_steps} optimizer steps."
-            )
+            extra_msg = f"Completed in {total_train_time:.2f} seconds, {total_epochs} epochs, {total_optimizer_steps} optimizer steps."
 
         log.info(
             f"Benchmark run at scale {config.problem_scale} complete. \n{extra_msg}"
