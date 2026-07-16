@@ -220,7 +220,7 @@ def main(kwargs_dict: dict = {}):
         num_spatial_dims = len(ps.shard_dim)
         trainer.ddp_placements = [Shard(0)] + [Replicate()] * num_spatial_dims
         total_shards = math.prod(config.dc_num_shards)
-        global_batch_size = config.batch_size * (world_size // total_shards)
+        global_batch_size = config.local_batch_size * (world_size // total_shards)
         config.global_batch_size = global_batch_size
         ddp_ranks = world_size // total_shards
         adiak_value("global_batch_size", global_batch_size)
@@ -230,7 +230,7 @@ def main(kwargs_dict: dict = {}):
         if rank == 0:
             log.info(
                 f"Effective global batch size = {global_batch_size} "
-                f"(batch_size={config.batch_size} * "
+                f"(local_batch_size={config.local_batch_size} * "
                 f"(world_size={world_size} / prod(dc_num_shards)={total_shards}))"
             )
             log.info(
@@ -247,7 +247,8 @@ def main(kwargs_dict: dict = {}):
                 "Effective global batch size exceeds available samples: "
                 f"global_batch_size={global_batch_size}, "
                 f"{', '.join(too_small_splits)}, "
-                f"batch_size={config.batch_size}, world_size={world_size}, "
+                f"local_batch_size={config.local_batch_size}, "
+                f"world_size={world_size}, "
                 f"dc_num_shards={config.dc_num_shards}"
             )
 

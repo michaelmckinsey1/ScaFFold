@@ -163,7 +163,7 @@ class BaseTrainer:
 
         num_workers = self.config.dataloader_num_workers
         loader_args = dict(
-            batch_size=self.config.batch_size,
+            batch_size=self.config.local_batch_size,
             num_workers=num_workers,
             pin_memory=True,
         )
@@ -182,9 +182,9 @@ class BaseTrainer:
         if len(self.val_loader) == 0:
             raise ValueError(
                 "Validation DataLoader has zero batches. "
-                f"n_val={self.n_val}, batch_size={self.config.batch_size}, "
+                f"n_val={self.n_val}, local_batch_size={self.config.local_batch_size}, "
                 f"data_num_replicas={self.data_num_replicas}. "
-                "Reduce batch_size or adjust validation sharding."
+                "Reduce local_batch_size or adjust validation sharding."
             )
 
     def setup_training_components(self):
@@ -675,7 +675,7 @@ class PyTorchTrainer(BaseTrainer):
                         # We don't want to time partial batches, i.e. last batch (time will be lower than expected).
                         time_minibatch = (
                             batch_idx
-                            < len(self.train_sampler) // self.config.batch_size
+                            < len(self.train_sampler) // self.config.local_batch_size
                         )
                         if time_minibatch:
                             minibatch_start_event = torch.cuda.Event(enable_timing=True)

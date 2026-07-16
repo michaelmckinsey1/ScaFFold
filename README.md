@@ -75,7 +75,7 @@ n_instances_used_per_fractal: 145  # Number of unique instances to pull from eac
 problem_scale: 6                   # Determines dataset resolution and number of unet layers. Default is 6.
 unet_bottleneck_dim: 3             # Power of 2 of the unet bottleneck layer dimension. Default of 3 -> bottleneck layer of size 8.
 seed: 42                           # Random seed.
-batch_size: 1                      # Batch sizes for each vol size.
+local_batch_size: 1                # Batch size for each vol size per DDP rank.
 optimizer: "ADAM"                  # "ADAM" is preferred option, otherwise training defautls to RMSProp.
 
 # Internal/dev use only
