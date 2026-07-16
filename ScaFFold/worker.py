@@ -290,7 +290,17 @@ def main(kwargs_dict: dict = {}):
         log.info(
             f"FOM = {fom} (1 / total_train_time={total_train_time:.6f} seconds). "
             f"This FOM is specific to problem_scale={config.problem_scale}, "
-            f"target_dice={config.target_dice}, seed={config.seed}."
+            f"target_dice={config.target_dice}, seed={config.seed}, "
+            f"local_batch_size={config.local_batch_size}, "
+            f"n_categories={config.n_categories}, "
+            f"n_instances_used_per_fractal={config.n_instances_used_per_fractal}, "
+            f"unet_bottleneck_dim={config.unet_bottleneck_dim}, "
+            f"optimizer={config.optimizer}, "
+            f"starting_learning_rate={config.starting_learning_rate}, "
+            f"min_learning_rate={config.min_learning_rate}, "
+            f"T_0={config.T_0}, T_mult={config.T_mult}, "
+            f"disable_scheduler={config.disable_scheduler}, "
+            f"dc_shard_dims={config.dc_shard_dims}."
         )
         epochs = np.atleast_1d(train_data["epoch"])
         total_epochs = int(epochs[-1])
