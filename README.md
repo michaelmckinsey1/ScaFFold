@@ -29,9 +29,6 @@ The model is trained from a random initialization until convergence, which is de
 1. Clone the repository:  
     `git clone https://github.com/LBANN/ScaFFold.git && cd ScaFFold`
 
-1. Build the ccl plugin (if not using WCI wheel)
-    `. scripts/install-rccl.sh`
-
 1. Create and activate a python venv for running the benchmark:  
     `ml load python/3.11.5 && python3 -m venv .venvs/scaffoldvenv && source .venvs/scaffoldvenv/bin/activate && pip install --upgrade pip`
 
@@ -52,6 +49,8 @@ The model is trained from a random initialization until convergence, which is de
 
 ## Running the benchmark
 
+### Basic run configuration
+
 1. If running the benchmark for the first time, or running with different fractal parameters (`n_categories`, `variance_threshold`) than previously, generate fractal classes and instances:  
     `scaffold generate_fractals -c ScaFFold/configs/benchmark_default.yml`
 
@@ -67,6 +66,10 @@ After each run completes, statistics from the run are stored in `train_stats.csv
 Parameters are set in a `.yml` config file and can be modified by the user. See
 [`ScaFFold/configs/benchmark_default.yml`](ScaFFold/configs/benchmark_default.yml)
 for the default benchmark configuration.
+
+### How to perform a scaling study
+
+See the specifications from [the benchmarking page.](https://software.llnl.gov/benchmarks/14_scaffold/scaffold.html)
 
 ## How the benchmark works
 
@@ -163,15 +166,17 @@ For n  in n_volumes:
     3. Save volume and mask  to files
 ```
 
-### 1. Profiling with the PyTorch Profiler
+### Performance Profiling
+
+#### 1. Profiling with the PyTorch Profiler
 
 Set `PROFILE_TORCH=ON` to generate a PyTorch profiling trace that can be read into [Perfetto](https://ui.perfetto.dev/).
 
-### 2. Profiling with Caliper & Adiak
+#### 2. Profiling with Caliper & Adiak
 
-#### Building Caliper & Adiak with Python Bindings
+##### Building Caliper & Adiak with Python Bindings
 
-##### A. Using Benchpark (via Spack)
+###### A. Using Benchpark (via Spack)
 
 1. Initialize experiment with Caliper
     - `benchpark system init --dest tuolumne llnl-elcapitan cluster=tuolumne`
@@ -179,7 +184,7 @@ Set `PROFILE_TORCH=ON` to generate a PyTorch profiling trace that can be read in
 1. `benchpark setup scaffold wkp`
 1. `# Follow ramble instructions ...`
 
-##### B. Manually
+###### B. Manually
 
 1. Activate python environment used to run the benchmark
     - `$ source /usr/workspace/mckinsey/ScaFFold-profiling/.venvs/scaffoldvenv/bin/activate`
@@ -219,7 +224,7 @@ export PYTHONPATH=/usr/workspace/mckinsey/Adiak/pybuild/lib/python3.11/site-pack
 export LD_LIBRARY_PATH=/usr/workspace/mckinsey/ScaFFold-profiling-manual/.venvs/scaffoldvenv/lib/python3.11/site-packages/torch/lib:$LD_LIBRARY_PATH
 ```
 
-#### Profiling ScaFFold with Caliper
+##### Profiling ScaFFold with Caliper
 
 1. Use the `CALI_CONFIG` environment variable to select a Caliper profiling configuration. If this variable is not defined, the annotated regions will not do anything, other than a function call and if check.
     - `$ CALI_CONFIG="spot(output=test.cali,profile.mpi)" scaffold benchmark -c ScaFFold/configs/benchmark_default.yml -j`
