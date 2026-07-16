@@ -290,7 +290,7 @@ def main(kwargs_dict: dict = {}):
         log.info(
             f"FOM = {fom} (1 / total_train_time={total_train_time:.6f} seconds). "
             f"This FOM is specific to problem_scale={config.problem_scale}, "
-            f"target_dice={config.target_dice}, seed={config.seed}, "
+            f"target_dice={config.target_dice}, "
             f"local_batch_size={config.local_batch_size}, "
             f"n_categories={config.n_categories}, "
             f"n_instances_used_per_fractal={config.n_instances_used_per_fractal}, "
