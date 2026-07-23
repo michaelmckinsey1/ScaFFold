@@ -159,7 +159,10 @@ class CheckpointManager:
 
         candidate = self._broadcast_obj(candidate)
         if not candidate:
-            return 1
+            raise FileNotFoundError(
+                "Restart requested but no checkpoint was found. "
+                f"Expected {self.last_ckpt_path} or {self.best_ckpt_path}."
+            )
 
         self._log(f"Loading checkpoint from {candidate}")
 

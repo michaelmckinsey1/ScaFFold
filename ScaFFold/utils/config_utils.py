@@ -68,6 +68,7 @@ class Config:
         self.more_determinism = bool(config_dict["more_determinism"])
         self.datagen_from_scratch = bool(config_dict["datagen_from_scratch"])
         self.train_from_scratch = bool(config_dict["train_from_scratch"])
+        self.restart = bool(config_dict.get("restart", False))
         self.val_split = config_dict["val_split"]
         self.seed = config_dict["seed"]
         if "dist" in config_dict and not bool(config_dict["dist"]):
