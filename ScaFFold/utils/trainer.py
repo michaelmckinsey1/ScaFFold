@@ -58,9 +58,9 @@ class BaseTrainer:
         self.amp_device_type = self.device.type if self.device.type != "mps" else "cpu"
         self.amp_dtype = AMP_DTYPE
         self.use_grad_scaler = False
-        self.world_size = get_world_size(required=self.config.dist)
-        self.world_rank = get_world_rank(required=self.config.dist)
-        self.local_rank = get_local_rank(required=self.config.dist)
+        self.world_size = get_world_size(required=True)
+        self.world_rank = get_world_rank(required=True)
+        self.local_rank = get_local_rank(required=True)
 
         # Initialize placeholders for attributes that will be set up later
         self.train_set = None
@@ -141,21 +141,17 @@ class BaseTrainer:
 
     def create_sampler(self):
         """Create DistributedSamplers for train and validation datasets."""
-        if self.config.dist:
-            self.train_sampler = torch.utils.data.distributed.DistributedSampler(
-                self.train_set,
-                num_replicas=self.data_num_replicas,
-                rank=self.data_replica_rank,
-            )
-            self.val_sampler = torch.utils.data.distributed.DistributedSampler(
-                self.val_set,
-                num_replicas=self.data_num_replicas,
-                rank=self.data_replica_rank,
-                shuffle=False,
-            )
-        else:
-            self.train_sampler = torch.utils.data.RandomSampler(self.train_set)
-            self.val_sampler = torch.utils.data.SequentialSampler(self.val_set)
+        self.train_sampler = torch.utils.data.distributed.DistributedSampler(
+            self.train_set,
+            num_replicas=self.data_num_replicas,
+            rank=self.data_replica_rank,
+        )
+        self.val_sampler = torch.utils.data.distributed.DistributedSampler(
+            self.val_set,
+            num_replicas=self.data_num_replicas,
+            rank=self.data_replica_rank,
+            shuffle=False,
+        )
 
     def create_dataloaders(self):
         """Create dataloaders for training and validation."""
@@ -225,24 +221,18 @@ class BaseTrainer:
         self.grad_scaler = torch.amp.GradScaler("cuda", enabled=self.use_grad_scaler)
 
         # Set up loss function
-        if self.config.n_categories + 1 > 1:
-            ce_class_weights = _compute_ce_class_weights(
-                train_set=self.train_set,
-                n_train=self.n_train,
-                n_categories=self.config.n_categories,
-                device=self.device,
-                sample_fraction=self.config.ce_weight_sample_fraction,
-                dist_enabled=self.config.dist,
-                world_rank=self.world_rank,
-                log=self.log,
-            )
-            self.criterion = nn.CrossEntropyLoss(weight=ce_class_weights).to(
-                self.device
-            )
-        else:
-            self.criterion = nn.BCEWithLogitsLoss().to(self.device)
-        if isinstance(self.criterion, nn.CrossEntropyLoss):
-            self.ce_class_weights = self.criterion.weight
+        ce_class_weights = _compute_ce_class_weights(
+            train_set=self.train_set,
+            n_train=self.n_train,
+            n_categories=self.config.n_categories,
+            device=self.device,
+            sample_fraction=self.config.ce_weight_sample_fraction,
+            dist_enabled=True,
+            world_rank=self.world_rank,
+            log=self.log,
+        )
+        self.criterion = nn.CrossEntropyLoss(weight=ce_class_weights).to(self.device)
+        self.ce_class_weights = self.criterion.weight
 
         self.log.info(
             f"Optimizer: {self.optimizer}, Scheduler: {self.scheduler}, AMP dtype: {self.amp_dtype}, Gradient Scaler Enabled: {self.use_grad_scaler}"
@@ -260,9 +250,7 @@ class BaseTrainer:
     @staticmethod
     def _foreground_dice_mean(dice_scores):
         """Match optimization to the reported validation metric by excluding background."""
-        if dice_scores.size(1) > 1:
-            return dice_scores[:, 1:].mean()
-        return dice_scores.mean()
+        return dice_scores[:, 1:].mean()
 
     def _current_learning_rate(self):
         if self.optimizer is None or not self.optimizer.param_groups:
@@ -288,7 +276,7 @@ class PyTorchTrainer(BaseTrainer):
             base_dir=self.checkpoint_path_absolute,
             log=self.log,
             world_rank=self.world_rank,
-            dist_enabled=self.config.dist,
+            dist_enabled=True,
             # Check config for async setting, default to False
             async_save=getattr(self.config, "async_save", False),
         )
@@ -556,17 +544,12 @@ class PyTorchTrainer(BaseTrainer):
             ],
             device=self.device,
         )
-        if self.config.dist:
-            gathered_minibatch_times = [
-                torch.empty_like(local_minibatch_times) for _ in range(self.world_size)
-            ]
-            torch.distributed.all_gather(
-                gathered_minibatch_times, local_minibatch_times
-            )
-            minibatch_times = torch.stack(gathered_minibatch_times)
-            minibatch_times = torch.max(minibatch_times, dim=0).values
-        else:
-            minibatch_times = local_minibatch_times
+        gathered_minibatch_times = [
+            torch.empty_like(local_minibatch_times) for _ in range(self.world_size)
+        ]
+        torch.distributed.all_gather(gathered_minibatch_times, local_minibatch_times)
+        minibatch_times = torch.stack(gathered_minibatch_times)
+        minibatch_times = torch.max(minibatch_times, dim=0).values
         minibatch_time_s = statistics.median(minibatch_times.cpu().tolist())
         return minibatch_time_s
 
@@ -576,8 +559,7 @@ class PyTorchTrainer(BaseTrainer):
         if warmup_batches <= 0:
             return
 
-        if self.config.dist:
-            self.train_loader.sampler.set_epoch(0)
+        self.train_loader.sampler.set_epoch(0)
 
         start_warmup = time.time()
         max_batches = min(warmup_batches, len(self.train_loader))
@@ -607,8 +589,7 @@ class PyTorchTrainer(BaseTrainer):
                     f"  warmup: batch {batch_idx} completed in {batch_t_end - start_warmup} seconds"
                 )
 
-            if self.config.dist:
-                self.val_loader.sampler.set_epoch(0)
+            self.val_loader.sampler.set_epoch(0)
 
             if max_val_batches > 0:
                 self.log.debug("  warmup: running validation warmup pass")
@@ -622,12 +603,12 @@ class PyTorchTrainer(BaseTrainer):
                     self.config.n_categories,
                     self.config._parallel_strategy,
                     max_batches=max_val_batches,
+                    log=self.log,
                 )
         finally:
             self.checkpoint_manager.restore_training_state(snapshot)
 
-        if self.config.dist:
-            torch.distributed.barrier()
+        torch.distributed.barrier()
         self.log.info(f"Done warmup. Took {int(time.time() - start_warmup)}s")
 
     def train(self):
@@ -642,8 +623,10 @@ class PyTorchTrainer(BaseTrainer):
             start = time.time()
             while dice_score_train < self.config.target_dice:
                 if self.config.epochs != -1 and epoch > self.config.epochs:
-                    print(
-                        f"Maxmimum epochs reached '{self.config.epochs}'. Concluding training early (may have not converged)."
+                    self.log.warning(
+                        "Maximum epochs reached '%s'. Concluding training early "
+                        "(may have not converged).",
+                        self.config.epochs,
                     )
                     break
 
@@ -656,9 +639,8 @@ class PyTorchTrainer(BaseTrainer):
                 minibatch_events = []
 
                 # Set necessary modes/states
-                if self.config.dist:
-                    self.train_loader.sampler.set_epoch(epoch)
-                    self.val_loader.sampler.set_epoch(epoch)
+                self.train_loader.sampler.set_epoch(epoch)
+                self.val_loader.sampler.set_epoch(epoch)
                 self.model.train()
                 self.optimizer.zero_grad(set_to_none=False)
 
@@ -735,15 +717,15 @@ class PyTorchTrainer(BaseTrainer):
                     self.criterion,
                     self.config.n_categories,
                     self.config._parallel_strategy,
+                    log=self.log,
                 )
                 dice_info = torch.tensor(
                     [dice_sum, numsamples], dtype=VOLUME_TORCH_DTYPE
                 )
-                if self.config.dist:
-                    dice_info = dice_info.to(device=self.device)
-                    torch.distributed.all_reduce(
-                        dice_info, op=torch.distributed.ReduceOp.SUM
-                    )
+                dice_info = dice_info.to(device=self.device)
+                torch.distributed.all_reduce(
+                    dice_info, op=torch.distributed.ReduceOp.SUM
+                )
                 val_score = dice_info[0].item() / max(dice_info[1].item(), 1)
                 if not self.config.disable_scheduler:
                     self.scheduler.step()
@@ -787,8 +769,17 @@ class PyTorchTrainer(BaseTrainer):
                         + "\n"
                     )
                     outfile.flush()
-                    print(
-                        f"Epoch {epoch} completed in {epoch_duration:.6f} seconds. Total train time so far: {time.time() - start:.6f} seconds. Median of minibatch times: {minibatch_time_s:.6f} seconds. Optimizer steps this epoch: {epoch_optimizer_steps}. Total optimizer steps: {self.total_optimizer_steps}."
+                    self.log.info(
+                        "Epoch %s completed in %.6f seconds. Total train time so "
+                        "far: %.6f seconds. Median of minibatch times: %.6f "
+                        "seconds. Optimizer steps this epoch: %s. Total "
+                        "optimizer steps: %s.",
+                        epoch,
+                        epoch_duration,
+                        time.time() - start,
+                        minibatch_time_s,
+                        epoch_optimizer_steps,
+                        self.total_optimizer_steps,
                     )
 
                 #

@@ -21,6 +21,12 @@ import yaml
 import ScaFFold.paths
 
 
+def require_positive_int(name: str, value: int) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
 class Config:
     """
     A class for storing configuration settings for a specific run.
@@ -36,7 +42,9 @@ class Config:
             Path(config_dict.get("fract_base_dir", "fractals/")).resolve()
         )
         self.job_name = config_dict.get("job_name", "benchmark")
-        self.n_categories = config_dict["n_categories"]
+        self.n_categories = require_positive_int(
+            "n_categories", config_dict["n_categories"]
+        )
         self.problem_scale = config_dict["problem_scale"]
         try:
             assert isinstance(self.problem_scale, int), (
@@ -62,7 +70,12 @@ class Config:
         self.train_from_scratch = bool(config_dict["train_from_scratch"])
         self.val_split = config_dict["val_split"]
         self.seed = config_dict["seed"]
-        self.dist = bool(config_dict["dist"])
+        if "dist" in config_dict and not bool(config_dict["dist"]):
+            raise ValueError(
+                "The 'dist: 0' mode is no longer supported. ScaFFold benchmark "
+                "training always runs with distributed execution; use a one-rank "
+                "torchrun-hpc job for singleton runs."
+            )
         self.framework = config_dict["framework"]
         self.starting_learning_rate = config_dict["starting_learning_rate"]
         self.min_learning_rate = config_dict["min_learning_rate"]
@@ -121,5 +134,5 @@ def load_config(file_path: str, config_type: str):
         return RunConfig(config_dict)
     else:
         raise ValueError(
-            f"Invalid config type specified: {type}. Must be either 'sweep' or 'run'"
+            f"Invalid config type specified: {config_type}. Must be either 'sweep' or 'run'"
         )

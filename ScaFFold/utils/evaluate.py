@@ -35,12 +35,10 @@ def evaluate(
     n_categories,
     parallel_strategy,
     max_batches=None,
+    log=None,
 ):
     def foreground_dice_stats(dice_scores):
-        if dice_scores.size(1) > 1:
-            per_sample_scores = dice_scores[:, 1:].mean(dim=1)
-        else:
-            per_sample_scores = dice_scores.mean(dim=1)
+        per_sample_scores = dice_scores[:, 1:].mean(dim=1)
         return per_sample_scores.sum().item(), per_sample_scores.numel()
 
     net.eval()
@@ -57,9 +55,11 @@ def evaluate(
 
     spatial_mesh = parallel_strategy.device_mesh[parallel_strategy.distconv_dim_names]
 
-    if primary:
-        print(
-            f"[eval] ps.shard_dim={parallel_strategy.shard_dim} num_shards={parallel_strategy.num_shards}"
+    if primary and log is not None:
+        log.debug(
+            "[eval] ps.shard_dim=%s num_shards=%s",
+            parallel_strategy.shard_dim,
+            parallel_strategy.num_shards,
         )
 
     with torch.autocast(**autocast_kwargs):
@@ -140,9 +140,15 @@ def evaluate(
     net.train()
 
     val_loss_avg = val_loss_epoch / max(processed_batches, 1)
-    if primary:
-        print(
-            f"evaluate.py: dice_score={total_dice_score}, val_loss_epoch={val_loss_epoch}, val_loss_avg={val_loss_avg}, num_val_batches={processed_batches}, num_val_samples={processed_samples}"
+    if primary and log is not None:
+        log.debug(
+            "evaluate.py: dice_score=%s, val_loss_epoch=%s, val_loss_avg=%s, "
+            "num_val_batches=%s, num_val_samples=%s",
+            total_dice_score,
+            val_loss_epoch,
+            val_loss_avg,
+            processed_batches,
+            processed_samples,
         )
     return (
         total_dice_score,

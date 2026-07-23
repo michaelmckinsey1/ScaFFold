@@ -62,7 +62,7 @@ def get_local_size(required: bool = False) -> int:
 
 
 def get_world_rank(required: bool = False) -> int:
-    """Return the global MPI rank.."""
+    """Return the global MPI rank."""
     if "MV2_COMM_WORLD_RANK" in os.environ:
         return int(os.environ["MV2_COMM_WORLD_RANK"])
     if "OMPI_COMM_WORLD_RANK" in os.environ:
@@ -89,16 +89,6 @@ def get_world_size(required: bool = False) -> int:
     if required:
         raise RuntimeError("Could not get world size")
     return 1
-
-
-def force_cuda_visible_devices(force: bool = False) -> None:
-    """Set CUDA_VISIBLE_DEVICES.
-
-    This seems to help avoid PyTorch or something else from touching
-    other GPUs.
-
-    """
-    print("force_cuda_visible_devices is deprecated. Skipping...")
 
 
 def get_device() -> torch.device:
@@ -143,10 +133,11 @@ def get_job_id() -> Optional[str]:
 
 
 def initialize_dist(
-    init_file: Optional[str] = None, rendezvous: Literal["env", "tcp", "file"] = "env"
+    log,
+    init_file: Optional[str] = None,
+    rendezvous: Literal["env", "tcp", "file"] = "env",
 ) -> None:
     """Initialize the PyTorch distributed backend and set up NCCL."""
-
     if rendezvous == "env":
         init_method = "env://"
     elif rendezvous == "tcp":
@@ -183,8 +174,10 @@ def initialize_dist(
     else:
         raise ValueError(f'Unrecognized scheme "{rendezvous}"')
 
-    print(
-        f"distributed.py: rank {get_world_rank()} / {get_world_size()} calling init_process_group()"
+    log.debug(
+        "rank %s / %s calling init_process_group()",
+        get_world_rank(),
+        get_world_size(),
     )
 
     # Initialize
