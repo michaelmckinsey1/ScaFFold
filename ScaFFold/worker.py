@@ -195,7 +195,7 @@ def main(kwargs_dict: dict = {}):
         num_spatial_dims = len(ps.shard_dim)
         trainer.ddp_placements = [Shard(0)] + [Replicate()] * num_spatial_dims
         total_shards = math.prod(config.dc_num_shards)
-        global_batch_size = config.batch_size * (world_size // total_shards)
+        global_batch_size = config.local_batch_size * (world_size // total_shards)
         config.global_batch_size = global_batch_size
         ddp_ranks = world_size // total_shards
         adiak_value("global_batch_size", global_batch_size)
@@ -205,7 +205,7 @@ def main(kwargs_dict: dict = {}):
         if rank == 0:
             log.info(
                 f"Effective global batch size = {global_batch_size} "
-                f"(batch_size={config.batch_size} * "
+                f"(local_batch_size={config.local_batch_size} * "
                 f"(world_size={world_size} / prod(dc_num_shards)={total_shards}))"
             )
             log.info(
@@ -222,7 +222,8 @@ def main(kwargs_dict: dict = {}):
                 "Effective global batch size exceeds available samples: "
                 f"global_batch_size={global_batch_size}, "
                 f"{', '.join(too_small_splits)}, "
-                f"batch_size={config.batch_size}, world_size={world_size}, "
+                f"local_batch_size={config.local_batch_size}, "
+                f"world_size={world_size}, "
                 f"dc_num_shards={config.dc_num_shards}"
             )
 
@@ -277,7 +278,16 @@ def main(kwargs_dict: dict = {}):
             log.info(
                 f"FOM = {fom} (1 / total_train_time={total_train_time:.6f} seconds). "
                 f"This FOM is specific to problem_scale={config.problem_scale}, "
-                f"target_dice={config.target_dice}, seed={config.seed}."
+                f"target_dice={config.target_dice}, "
+                f"n_categories={config.n_categories}, "
+                f"n_instances_used_per_fractal={config.n_instances_used_per_fractal}, "
+                f"unet_bottleneck_dim={config.unet_bottleneck_dim}, "
+                f"optimizer={config.optimizer}, "
+                f"starting_learning_rate={config.starting_learning_rate}, "
+                f"min_learning_rate={config.min_learning_rate}, "
+                f"T_0={config.T_0}, T_mult={config.T_mult}, "
+                f"disable_scheduler={config.disable_scheduler}, "
+                f"dc_shard_dims={config.dc_shard_dims}."
             )
             extra_msg = f"Trained to >= {config.target_dice} validation dice score in {total_train_time:.2f} seconds, {total_epochs} epochs, {total_optimizer_steps} optimizer steps."
         else:

@@ -142,7 +142,9 @@ def main():
     )
     benchmark_parser.add_argument("--seed", type=int, help="Random seed.")
     benchmark_parser.add_argument(
-        "--batch-size", type=int, help="Batch size per data-parallel rank."
+        "--local-batch-size",
+        type=int,
+        help="Batch size for each vol size per DDP rank.",
     )
     benchmark_parser.add_argument(
         "--warmup-batches",

@@ -29,9 +29,6 @@ The model is trained from a random initialization until convergence, which is de
 1. Clone the repository:  
     `git clone https://github.com/LBANN/ScaFFold.git && cd ScaFFold`
 
-1. Build the ccl plugin (if not using WCI wheel)
-    `. scripts/install-rccl.sh`
-
 1. Create and activate a python venv for running the benchmark:  
     `ml load python/3.11.5 && python3 -m venv .venvs/scaffoldvenv && source .venvs/scaffoldvenv/bin/activate && pip install --upgrade pip`
 
@@ -52,6 +49,8 @@ The model is trained from a random initialization until convergence, which is de
 
 ## Running the benchmark
 
+### Basic run configuration
+
 1. If running the benchmark for the first time, or running with different fractal parameters (`n_categories`, `variance_threshold`) than previously, generate fractal classes and instances:  
     `scaffold generate_fractals -c ScaFFold/configs/benchmark_default.yml`
 
@@ -66,45 +65,13 @@ ScaFFold benchmark training always uses PyTorch distributed execution with DistC
 
 After each run completes, statistics from the run are stored in `train_stats.csv`. Additionally, users can inspect plots of the training and validation losses over time in `<base_run_dir/figures`.
 
-Parameters are set in a `.yml` config file and can be modified by the user:
+Parameters are set in a `.yml` config file and can be modified by the user. See
+[`ScaFFold/configs/benchmark_default.yml`](ScaFFold/configs/benchmark_default.yml)
+for the default benchmark configuration.
 
-```yml
-# External/user-facing
-base_run_dir: "benchmark_runs"     # Subfolder of $(pwd) in which to run jobs.
-dataset_dir: "datasets"            # Directory in which to store and query generated datasets.
-fract_base_dir: "fractals"         # Base directory for fractal IFS and instances.
-n_categories: 5                    # Positive number of fractal categories present in the dataset.
-n_instances_used_per_fractal: 145  # Number of unique instances to pull from each fractal class. There are 145 unique; exceeding this number will reuse some instances.
-problem_scale: 7                   # Determines dataset resolution and number of unet layers.
-unet_bottleneck_dim: 3             # Power of 2 of the unet bottleneck layer dimension. Default of 3 -> bottleneck layer of size 8.
-seed: 42                           # Random seed.
-batch_size: 1                      # Batch size per data-parallel rank.
-dataloader_num_workers: 1          # Number of DataLoader worker processes per rank.
-optimizer: "ADAM"                  # "ADAM" is preferred option, otherwise training defaults to RMSProp.
-dc_num_shards: [1, 1, 1]           # DistConv spatial shard counts.
-dc_shard_dims: [2, 3, 4]           # Tensor dimensions sharded by DistConv.
-checkpoint_interval: -1            # Checkpoint every C epochs; set to -1 to disable checkpointing entirely.
+### How to perform a scaling study
 
-# Internal/dev use only
-variance_threshold: 0.15           # Variance threshold for valid fractals. Default is 0.15.
-n_fracts_per_vol: 3                # Number of fractals overlaid in each volume. Default is 3.
-val_split: 25                      # In percent.
-epochs: 100                        # Number of training epochs.
-starting_learning_rate: .01        # Initial learning rate for training.
-min_learning_rate: .001            # Minimum learning rate for CosineAnnealingWarmRestarts.
-T_0: 100                           # Epochs in the first cosine restart cycle.
-T_mult: 2                          # Restart cycle growth factor.
-disable_scheduler: 1               # If 1, disable scheduler during training to use constant LR.
-more_determinism: 0                # If 1, improve model training determinism.
-datagen_from_scratch: 0            # If 1, delete existing fractals and instances, then regenerate from scratch.
-train_from_scratch: 1              # If 1, delete existing train stats and checkpoint files. Keep 0 if want to restart runs where we left off.
-torch_amp: 1                       # If 1, use mixed precision in training.
-framework: "torch"                 # The DL framework to train with. Only valid option for now is "torch".
-checkpoint_dir: "checkpoints"      # Subfolder in which to save training checkpoints.
-loss_freq: 1                       # Number of epochs between logging the overall loss.
-warmup_batches: 64                 # How many warmup batches per rank to run before training.
-target_dice: 0.95                  # Validation Dice score threshold for convergence when epochs is -1.
-```
+See the specifications from [the benchmarking page.](https://software.llnl.gov/benchmarks/14_scaffold/scaffold.html)
 
 ## How the benchmark works
 
@@ -201,15 +168,17 @@ For n  in n_volumes:
     3. Save volume and mask  to files
 ```
 
-### 1. Profiling with the PyTorch Profiler
+### Performance Profiling
+
+#### 1. Profiling with the PyTorch Profiler
 
 Set `PROFILE_TORCH=ON` to generate a PyTorch profiling trace that can be read into [Perfetto](https://ui.perfetto.dev/).
 
-### 2. Profiling with Caliper & Adiak
+#### 2. Profiling with Caliper & Adiak
 
-#### Building Caliper & Adiak with Python Bindings
+##### Building Caliper & Adiak with Python Bindings
 
-##### A. Using Benchpark (via Spack)
+###### A. Using Benchpark (via Spack)
 
 1. Initialize experiment with Caliper
     - `benchpark system init --dest tuolumne llnl-elcapitan cluster=tuolumne`
@@ -217,7 +186,7 @@ Set `PROFILE_TORCH=ON` to generate a PyTorch profiling trace that can be read in
 1. `benchpark setup scaffold wkp`
 1. `# Follow ramble instructions ...`
 
-##### B. Manually
+###### B. Manually
 
 1. Activate python environment used to run the benchmark
     - `$ source /usr/workspace/mckinsey/ScaFFold-profiling/.venvs/scaffoldvenv/bin/activate`
@@ -257,7 +226,7 @@ export PYTHONPATH=/usr/workspace/mckinsey/Adiak/pybuild/lib/python3.11/site-pack
 export LD_LIBRARY_PATH=/usr/workspace/mckinsey/ScaFFold-profiling-manual/.venvs/scaffoldvenv/lib/python3.11/site-packages/torch/lib:$LD_LIBRARY_PATH
 ```
 
-#### Profiling ScaFFold with Caliper
+##### Profiling ScaFFold with Caliper
 
 1. Use the `CALI_CONFIG` environment variable to select a Caliper profiling configuration. If this variable is not defined, the annotated regions will not do anything, other than a function call and if check.
     - `$ CALI_CONFIG="spot(output=test.cali,profile.mpi)" scaffold benchmark -c ScaFFold/configs/benchmark_default.yml -j`

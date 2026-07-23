@@ -2,28 +2,33 @@
 base_run_dir: "benchmark_runs"     # Subfolder of $(pwd) in which to run jobs.
 dataset_dir: "datasets"            # Directory in which to store and query for datasets.
 fract_base_dir: "fractals"         # Base directory for fractal IFS and instances.
-n_categories: 5                    # Positive number of fractal categories present in the dataset.
-n_instances_used_per_fractal: 145  # Number of unique instances to pull from each fractal class. There are 145 unique; exceeding this number will reuse some instances.
-problem_scale: 7                   # Determines dataset resolution and number of unet layers. Default is 6.
-unet_bottleneck_dim: 3             # Power of 2 of the unet bottleneck layer dimension. Default of 3 -> bottleneck layer of size 8.
 seed: 42                           # Random seed.
-batch_size: 1                      # Batch sizes for each vol size per rank.
 dataloader_num_workers: 1          # Number of DataLoader worker processes per rank. More workers will use more memory
-optimizer: "ADAM"                  # "ADAM" is preferred option, otherwise training defaults to RMSProp.
 dc_num_shards: [1, 1, 1]           # DistConv param: number of shards to divide the tensor into. It's best to choose the fewest ranks needed to fit one sample in GPU memory, since that keeps communication at a minimum
 dc_shard_dims: [2, 3, 4]           # DistConv param: dimension on which to shard
 checkpoint_interval: -1            # Checkpoint every C epochs; set to -1 to disable checkpointing entirely.
+
+# External problem specification
+n_categories: 5                    # Positive number of fractal categories present in the dataset.
+n_instances_used_per_fractal: 145  # Number of unique instances to pull from each fractal class. There are 145 unique; exceeding this number will reuse some instances.
+problem_scale: 7                   # Determines dataset resolution and number of unet layers. Default is 7.
+unet_bottleneck_dim: 3             # Power of 2 of the unet bottleneck layer dimension. Default of 3 -> bottleneck layer of size 8.
+target_dice: 0.95                  # Dice score required to reach convergence
+
+# External learning rate specification
+local_batch_size: 1                # Batch size for each vol size per DDP rank.
+optimizer: "ADAM"                  # "ADAM" is preferred option, otherwise training defaults to RMSProp.
+starting_learning_rate: 0.001      # Initial learning rate for training.
+min_learning_rate: 0.0001          # Minimum learning rate for CosineAnnealingWarmRestarts.
+T_0: 100                           # Epochs in the first cosine restart cycle.
+T_mult: 2                          # Restart cycle growth factor.
+disable_scheduler: 0               # If 1, disable scheduler during training to use constant LR.
 
 # Internal/dev use only
 variance_threshold: 0.15           # Variance threshold for valid fractals. Default is 0.15.
 n_fracts_per_vol: 3                # Number of fractals overlaid in each volume. Default is 3.
 val_split: 30                      # In percent.
 epochs: -1                         # Number of training epochs.
-starting_learning_rate: 0.001      # Initial learning rate for training.
-min_learning_rate: 0.0001          # Minimum learning rate for CosineAnnealingWarmRestarts.
-T_0: 100                           # Epochs in the first cosine restart cycle.
-T_mult: 2                          # Restart cycle growth factor.
-disable_scheduler: 0               # If 1, disable scheduler during training to use constant LR.
 more_determinism: 0                # If 1, improve model training determinism.
 datagen_from_scratch: 0            # If 1, delete existing fractals and instances, then regenerate from scratch.
 train_from_scratch: 1              # If 1, delete existing train stats and checkpoint files. Keep 0 if want to restart runs where we left off.
@@ -36,4 +41,3 @@ group_norm_groups: 8              # Number of groups used by GroupNorm in the UN
 warmup_batches: 64                 # How many warmup batches per rank to run before training.
 ce_weight_sample_fraction: 0.1     # Fraction of training masks to sample when estimating background vs foreground CE weights.
 dataset_reuse_enforce_commit_id: 0 # Enforce matching commit IDs for dataset reuse.
-target_dice: 0.95
