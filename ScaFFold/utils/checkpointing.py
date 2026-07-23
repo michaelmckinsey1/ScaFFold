@@ -159,7 +159,10 @@ class CheckpointManager:
 
         candidate = self._broadcast_obj(candidate)
         if not candidate:
-            return 1
+            raise FileNotFoundError(
+                "Restart requested but no checkpoint was found. "
+                f"Expected {self.last_ckpt_path} or {self.best_ckpt_path}."
+            )
 
         self._log(f"Loading checkpoint from {candidate}")
 
@@ -275,12 +278,17 @@ class CheckpointManager:
                     self.last_ckpt_path,
                     self.best_ckpt_path,
                     is_best,
+                    self.log,
                 )
                 self._log("Async checkpoint offloaded to background thread.")
             else:
                 # Synchronous Save
                 self._write_to_disk(
-                    state_dict, self.last_ckpt_path, self.best_ckpt_path, is_best
+                    state_dict,
+                    self.last_ckpt_path,
+                    self.best_ckpt_path,
+                    is_best,
+                    self.log,
                 )
 
         # Broadcast result (for logging elsewhere)
@@ -292,14 +300,13 @@ class CheckpointManager:
         return is_best
 
     @staticmethod
-    def _write_to_disk(state_dict, last_path, best_path, is_best):
+    def _write_to_disk(state_dict, last_path, best_path, is_best, log):
         """Worker function to perform actual disk I/O."""
         # Save 'last'
         try:
             torch.save(state_dict, last_path)
         except Exception as e:
-            print("Saving checkpoint failed. Continuing...")
-            print(e)
+            CheckpointManager._log_save_failure(log, e)
         # Save 'best' (copy logic)
         if is_best:
             # Copy is often faster than re-serializing
@@ -309,8 +316,11 @@ class CheckpointManager:
                 try:
                     torch.save(state_dict, best_path)
                 except Exception as e:
-                    print("Saving checkpoint failed. Continuing...")
-                    print(e)
+                    CheckpointManager._log_save_failure(log, e)
+
+    @staticmethod
+    def _log_save_failure(log, exc):
+        log.warning("Saving checkpoint failed. Continuing: %s", exc)
 
     def _transfer_dict_to_cpu(self, obj):
         """Recursively move tensors to CPU."""
